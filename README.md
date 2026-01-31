@@ -1,6 +1,6 @@
-# Start Menu Organizer Pro
+# Start Menu Organizer
 
-A powerful Windows Start Menu management tool with a modern dark-themed GUI. Clean up junk, detect broken shortcuts, remove duplicates, organize by category, and take full control of your Start Menu.
+A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, remove duplicates, organize by category, and take full control of your Start Menu.
 
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-blue)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6)
