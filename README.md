@@ -36,7 +36,6 @@ A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, re
 - **Find & Replace** - Custom text replacement in shortcut names
 
 ### User Interface
-- Modern dark theme with GitHub-inspired colors
 - **DataGrid View** with sortable columns: Name, Type, Status, Location, Target
 - **Search/Filter** (Ctrl+F) - Filter by name, path, or target in real-time
 - **Filter Toggles** - Show/hide Shortcuts, Folders, Junk, Broken, Duplicates
