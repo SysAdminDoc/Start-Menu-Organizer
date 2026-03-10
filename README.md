@@ -66,10 +66,6 @@ No installation required. Simply download and run.
 
 ### Option 2: From PowerShell
 ```powershell
-# Navigate to the script location
-cd "C:\Path\To\Script"
-
-# Run the script
 .\StartMenuOrganizerPro.ps1
 ```
 
@@ -78,8 +74,6 @@ For full access to both User and System Start Menus, run as Administrator:
 
 1. Right-click PowerShell → "Run as Administrator"
 2. Navigate to script location and run it
-
-Or right-click the script → "Run with PowerShell as Administrator"
 
 ## Requirements
 
@@ -160,11 +154,6 @@ Save your customized patterns:
 2. Click "Export Config"
 3. Save the JSON file
 
-Import on another machine:
-1. Go to Settings tab
-2. Click "Import Config"
-3. Select your JSON file
-
 ## Data Storage
 
 | Item | Location |
@@ -186,14 +175,16 @@ Import on another machine:
 - For older changes, use "Restore" to recover from a backup
 
 ### Script won't run
-PowerShell execution policy may be blocking scripts:
 ```powershell
-# Check current policy
-Get-ExecutionPolicy
-
-# Allow scripts for current user (if needed)
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
+
+## Related Tools
+
+> **Start Menu Organizer** cleans up and reorganizes what's already in your Start Menu — removing junk, broken links, and duplicates, and sorting apps into folders.
+> If you want to *save, deploy, or restore* a Start Menu layout across machines or after Windows updates, see the companion tool:
+
+**[Start Menu Manager](https://github.com/SysAdminDoc/Start-Menu-Manager)** — Export/import Start Menu layouts and taskbar configurations, manage named profiles, and perform full backups. Use Start Menu Organizer to clean up first, then Start Menu Manager to preserve and deploy the result.
 
 ## Contributing
 
@@ -201,11 +192,7 @@ Contributions are welcome! Feel free to submit issues and pull requests.
 
 ## License
 
-MIT License - Feel free to use, modify, and distribute.
-
-## Author
-
-Matt | Maven Imaging
+MIT License — see the [LICENSE](LICENSE) file for details.
 
 ---
 
