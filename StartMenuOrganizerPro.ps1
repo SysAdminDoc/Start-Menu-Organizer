@@ -27,7 +27,7 @@
 # ============================================================================
 
 $script:Config = @{
-    Version         = "0.10.0"
+    Version         = "0.11.0"
     SettingsSchema  = 1
     UserStartMenu   = [Environment]::GetFolderPath('StartMenu') + '\Programs'
     SystemStartMenu = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs"
@@ -35,7 +35,9 @@ $script:Config = @{
     ConfigFile      = "$env:LOCALAPPDATA\StartMenuOrganizerPro\config.json"
     UndoFile        = "$env:LOCALAPPDATA\StartMenuOrganizerPro\undo.json"
     UndoBackupRoot  = "$env:LOCALAPPDATA\StartMenuOrganizerPro\UndoBackups"
+    LogRoot         = "$env:LOCALAPPDATA\StartMenuOrganizerPro\Logs"
     MaxUndoSteps    = 50
+    MaxLogFiles     = 14
 }
 
 # Default junk patterns
@@ -968,13 +970,189 @@ $dgItems.ItemsSource = $script:FilteredItems
 $script:CurrentOperationPlan = $null
 $script:ActiveWorker = $null
 $script:IsLoadingConfiguration = $false
+$script:SessionId = [System.Guid]::NewGuid().ToString('N')
+$script:LogFilePath = $null
+$script:UnhandledExceptionHandlersRegistered = $false
 
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
 
+function Remove-OldLogFiles {
+    param(
+        [string]$LogRoot,
+        [string]$Filter,
+        [int]$MaxLogFiles
+    )
+
+    if ($MaxLogFiles -lt 1 -or -not (Test-Path -LiteralPath $LogRoot)) { return }
+
+    $oldFiles = @(Get-ChildItem -LiteralPath $LogRoot -Filter $Filter -File -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -Skip $MaxLogFiles)
+    foreach ($file in $oldFiles) {
+        Remove-Item -LiteralPath $file.FullName -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Initialize-FileLogging {
+    param(
+        [string]$LogRoot = $Config.LogRoot,
+        [int]$MaxLogFiles = $Config.MaxLogFiles
+    )
+
+    [System.IO.Directory]::CreateDirectory($LogRoot) | Out-Null
+    $script:LogFilePath = Join-Path $LogRoot "StartMenuOrganizer-$(Get-Date -Format 'yyyyMMdd').jsonl"
+    if (-not (Test-Path -LiteralPath $script:LogFilePath)) {
+        [System.IO.File]::WriteAllText($script:LogFilePath, '', [System.Text.UTF8Encoding]::new($false))
+    }
+    Remove-OldLogFiles -LogRoot $LogRoot -Filter 'StartMenuOrganizer-*.jsonl' -MaxLogFiles $MaxLogFiles
+    Remove-OldLogFiles -LogRoot $LogRoot -Filter 'StartMenuOrganizer-Crash-*.log' -MaxLogFiles $MaxLogFiles
+    return $script:LogFilePath
+}
+
+function Get-ExceptionDetails {
+    param([object]$Exception)
+
+    $exceptionObject = $Exception
+    $scriptStackTrace = $null
+    if ($Exception -is [System.Management.Automation.ErrorRecord]) {
+        $exceptionObject = $Exception.Exception
+        $scriptStackTrace = $Exception.ScriptStackTrace
+    }
+
+    if (-not $exceptionObject) {
+        return [ordered]@{
+            Type = 'Unknown'
+            Message = ''
+            StackTrace = ''
+            ScriptStackTrace = $scriptStackTrace
+        }
+    }
+
+    return [ordered]@{
+        Type = $exceptionObject.GetType().FullName
+        Message = $exceptionObject.Message
+        StackTrace = $exceptionObject.StackTrace
+        ScriptStackTrace = $scriptStackTrace
+    }
+}
+
+function Write-StructuredLogEntry {
+    param(
+        [string]$Message,
+        [ValidateSet('Info','Success','Warning','Error')]
+        [string]$Level = 'Info',
+        [string]$OperationId = $null,
+        [object]$Exception = $null,
+        [string]$CrashLogPath = $null
+    )
+
+    try {
+        if (-not $script:LogFilePath) {
+            Initialize-FileLogging | Out-Null
+        }
+
+        $entry = [ordered]@{
+            Timestamp = (Get-Date).ToString('o')
+            Level = $Level
+            Message = $Message
+            OperationId = $OperationId
+            SessionId = $script:SessionId
+            Version = $Config.Version
+            IsAdmin = [bool]$script:IsAdmin
+            ProcessId = $PID
+        }
+
+        if ($CrashLogPath) {
+            $entry.CrashLogPath = $CrashLogPath
+        }
+        if ($Exception) {
+            $entry.Exception = Get-ExceptionDetails -Exception $Exception
+        }
+
+        $json = ($entry | ConvertTo-Json -Depth 8 -Compress)
+        [System.IO.File]::AppendAllText($script:LogFilePath, "$json`r`n", [System.Text.UTF8Encoding]::new($false))
+    }
+    catch {
+        Write-Verbose "File logging failed: $($_.Exception.Message)"
+    }
+}
+
+function Write-CrashLog {
+    param(
+        [object]$Exception,
+        [string]$Context = 'Unhandled exception',
+        [string]$OperationId = $null
+    )
+
+    try {
+        if (-not $script:LogFilePath) {
+            Initialize-FileLogging | Out-Null
+        }
+
+        $details = Get-ExceptionDetails -Exception $Exception
+        $crashPath = Join-Path $Config.LogRoot "StartMenuOrganizer-Crash-$(Get-Date -Format 'yyyyMMddHHmmssfff').log"
+        $lines = @(
+            "Context: $Context",
+            "Timestamp: $((Get-Date).ToString('o'))",
+            "Version: $($Config.Version)",
+            "SessionId: $script:SessionId",
+            "OperationId: $OperationId",
+            "IsAdmin: $([bool]$script:IsAdmin)",
+            "ProcessId: $PID",
+            '',
+            "ExceptionType: $($details.Type)",
+            "Message: $($details.Message)",
+            '',
+            'StackTrace:',
+            "$($details.StackTrace)",
+            '',
+            'ScriptStackTrace:',
+            "$($details.ScriptStackTrace)"
+        )
+        [System.IO.File]::WriteAllLines($crashPath, $lines, [System.Text.UTF8Encoding]::new($false))
+        Write-StructuredLogEntry -Message "$Context. Crash log: $crashPath" -Level 'Error' -OperationId $OperationId -Exception $Exception -CrashLogPath $crashPath
+        return $crashPath
+    }
+    catch {
+        return $null
+    }
+}
+
+function Register-UnhandledExceptionHandlers {
+    if ($script:UnhandledExceptionHandlersRegistered) { return }
+
+    [System.AppDomain]::CurrentDomain.add_UnhandledException({
+        param($eventSource, $eventData)
+        $null = $eventSource
+        Write-CrashLog -Exception $eventData.ExceptionObject -Context 'Unhandled AppDomain exception' | Out-Null
+    })
+
+    if ($Window -and $Window.Dispatcher) {
+        $Window.Dispatcher.add_UnhandledException({
+            param($eventSource, $eventData)
+            $null = $eventSource
+            $crashPath = Write-CrashLog -Exception $eventData.Exception -Context 'Unhandled WPF dispatcher exception'
+            $message = "An unexpected error occurred."
+            if ($crashPath) {
+                $message = "$message`n`nCrash log:`n$crashPath"
+            }
+            [System.Windows.MessageBox]::Show($message, "Start Menu Organizer Error", "OK", "Error") | Out-Null
+            $eventData.Handled = $true
+        })
+    }
+
+    $script:UnhandledExceptionHandlersRegistered = $true
+}
+
 function Write-Log {
-    param([string]$Message, [ValidateSet('Info','Success','Warning','Error')]$Level = 'Info')
+    param(
+        [string]$Message,
+        [ValidateSet('Info','Success','Warning','Error')]
+        [string]$Level = 'Info',
+        [string]$OperationId = $null
+    )
     
     $timestamp = Get-Date -Format "HH:mm:ss"
     $color = switch ($Level) {
@@ -983,13 +1161,17 @@ function Write-Log {
         'Error'   { '#f85149' }
         default   { '#8b949e' }
     }
+
+    Write-StructuredLogEntry -Message $Message -Level $Level -OperationId $OperationId
     
-    $Window.Dispatcher.Invoke([Action]{
-        $run = [System.Windows.Documents.Run]::new("[$timestamp] $Message`r`n")
-        $run.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($color)
-        $txtLog.Inlines.Add($run)
-        $svLog.ScrollToEnd()
-    })
+    if ($Window -and $txtLog -and $svLog) {
+        $Window.Dispatcher.Invoke([Action]{
+            $run = [System.Windows.Documents.Run]::new("[$timestamp] $Message`r`n")
+            $run.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($color)
+            $txtLog.Inlines.Add($run)
+            $svLog.ScrollToEnd()
+        })
+    }
 }
 
 function Update-Status {
@@ -1316,6 +1498,7 @@ function Invoke-GuardedFileOperation {
 
     $result = [ordered]@{
         Action = $Action
+        OperationId = $OperationId
         SourcePath = $SourcePath
         DestinationPath = $DestinationPath
         BackupPath = $null
@@ -1409,11 +1592,13 @@ function New-JournalItem {
         [string]$NewPath = $null,
         [string]$BackupPath = $null,
         [string]$Result = 'Success',
-        [string]$Message = ''
+        [string]$Message = '',
+        [string]$OperationId = $null
     )
 
     return [PSCustomObject]@{
         ActionType   = $ActionType
+        OperationId  = $OperationId
         OriginalPath = $OriginalPath
         NewPath      = $NewPath
         BackupPath   = $BackupPath
@@ -1489,6 +1674,7 @@ function Add-JournalEntry {
     }
 
     Save-UndoJournal
+    Write-Log "Journal recorded: $Description" 'Info' -OperationId $OperationId
     $Window.Dispatcher.Invoke([Action]{ $btnUndo.IsEnabled = $true })
 }
 
@@ -1516,7 +1702,7 @@ function Invoke-JournaledDelete {
         throw $operation.Message
     }
 
-    return New-JournalItem -ActionType 'Delete' -OriginalPath $Path -BackupPath $operation.BackupPath -Result $operation.Result -Message $operation.Message
+    return New-JournalItem -ActionType 'Delete' -OriginalPath $Path -BackupPath $operation.BackupPath -Result $operation.Result -Message $operation.Message -OperationId $OperationId
 }
 
 function Invoke-JournaledMove {
@@ -1531,7 +1717,7 @@ function Invoke-JournaledMove {
         throw $operation.Message
     }
 
-    return New-JournalItem -ActionType 'Move' -OriginalPath $SourcePath -NewPath $DestinationPath -BackupPath $operation.BackupPath -Result $operation.Result -Message $operation.Message
+    return New-JournalItem -ActionType 'Move' -OriginalPath $SourcePath -NewPath $DestinationPath -BackupPath $operation.BackupPath -Result $operation.Result -Message $operation.Message -OperationId $OperationId
 }
 
 function Invoke-JournaledRename {
@@ -1547,7 +1733,7 @@ function Invoke-JournaledRename {
         throw $operation.Message
     }
 
-    return New-JournalItem -ActionType 'Rename' -OriginalPath $SourcePath -NewPath $newPath -BackupPath $operation.BackupPath -Result $operation.Result -Message $operation.Message
+    return New-JournalItem -ActionType 'Rename' -OriginalPath $SourcePath -NewPath $newPath -BackupPath $operation.BackupPath -Result $operation.Result -Message $operation.Message -OperationId $OperationId
 }
 
 function Restore-JournalBackup {
@@ -1571,7 +1757,7 @@ function Invoke-Undo {
     $lastAction = $script:UndoStack[$script:UndoStack.Count - 1]
     $script:UndoStack.RemoveAt($script:UndoStack.Count - 1)
 
-    Write-Log "Undo: $($lastAction.Description)" 'Warning'
+    Write-Log "Undo: $($lastAction.Description)" 'Warning' -OperationId $lastAction.OperationId
 
     $items = @($lastAction.Items)
     for ($i = $items.Count - 1; $i -ge 0; $i--) {
@@ -3916,6 +4102,8 @@ $configDir = Split-Path $Config.ConfigFile -Parent
 if (-not (Test-Path $configDir)) {
     New-Item -Path $configDir -ItemType Directory -Force | Out-Null
 }
+Initialize-FileLogging | Out-Null
+Register-UnhandledExceptionHandlers
 Load-ApplicationConfiguration
 Load-UndoJournal
 
@@ -3927,10 +4115,23 @@ Refresh-CategoryPatternsUI
 # Initial scan
 Refresh-Items
 Write-Log "Start Menu Organizer v$($Config.Version) initialized" 'Success'
+Write-Log "File log: $script:LogFilePath" 'Info'
 Write-Log "Keyboard shortcuts: Del=Delete, Ctrl+A=Select All, Ctrl+Z=Undo, Ctrl+F=Search, F5=Refresh" 'Info'
 
 # Show window
-$Window.ShowDialog() | Out-Null
-
-# Cleanup COM object
-[System.Runtime.Interopservices.Marshal]::ReleaseComObject($script:WScriptShell) | Out-Null
+try {
+    $Window.ShowDialog() | Out-Null
+}
+catch {
+    $crashPath = Write-CrashLog -Exception $_ -Context 'Fatal startup/runtime exception'
+    $message = "Start Menu Organizer encountered an unexpected error."
+    if ($crashPath) {
+        $message = "$message`n`nCrash log:`n$crashPath"
+    }
+    [System.Windows.MessageBox]::Show($message, "Start Menu Organizer Error", "OK", "Error") | Out-Null
+}
+finally {
+    if ($script:WScriptShell) {
+        [System.Runtime.Interopservices.Marshal]::ReleaseComObject($script:WScriptShell) | Out-Null
+    }
+}

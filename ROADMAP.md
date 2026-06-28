@@ -2,13 +2,6 @@
 
 ## Research-Driven Additions
 
-- [ ] P2 - Add structured file logging and crash logs
-  Why: The in-window log is useful during a session but does not persist diagnostics for failed filesystem changes.
-  Evidence: `StartMenuOrganizerPro.ps1:929`, ClearWinStart rotating log model.
-  Touches: `Write-Log`, error handlers, `%LOCALAPPDATA%\StartMenuOrganizerPro\Logs`.
-  Acceptance: Logs write to a dated file with rotation, include operation IDs from the journal, and capture unhandled exceptions before showing the user-facing error.
-  Complexity: M
-
 - [ ] P2 - Improve accessibility and localization readiness
   Why: Current WPF text is hard-coded English with custom dark controls and no visible automation labels, while mature Start Menu tools support language assets.
   Evidence: XAML resources and labels in `StartMenuOrganizerPro.ps1:104` through `StartMenuOrganizerPro.ps1:890`, Open-Shell language DLL workflow.

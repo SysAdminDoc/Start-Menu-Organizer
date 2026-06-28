@@ -2,7 +2,7 @@
 
 A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, remove duplicates, organize by category, and take full control of your Start Menu.
 
-![Version](https://img.shields.io/badge/Version-v0.10.0-blue)
+![Version](https://img.shields.io/badge/Version-v0.11.0-blue)
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-blue)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6)
 ![License](https://img.shields.io/badge/License-MIT-green)
@@ -55,6 +55,7 @@ A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, re
 - **Editable Transaction Plans** - Preview bulk actions into JSON plans that can be reviewed, exported, imported, and executed exactly
 - **Protected Folders** - Preserves built-in folders like Startup, Windows Tools, and Administrative Tools by default
 - **Persistent Settings** - Automatically saves scope, patterns, categories, and protected-folder preferences
+- **Structured Logs** - Writes dated JSONL logs and crash reports under the local app data folder
 - **Preview Mode** - Dry-run any operation first
 - **Confirmation Dialogs** - No destructive action without explicit approval
 
@@ -67,7 +68,7 @@ A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, re
 ## Installation
 
 ### Option 1: Installable Package
-1. Download `StartMenuOrganizer-v0.10.0.zip` from the release artifacts.
+1. Download `StartMenuOrganizer-v0.11.0.zip` from the release artifacts.
 2. Extract the zip to a local folder.
 3. Install for the current user:
 
@@ -185,6 +186,7 @@ Save your customized patterns:
 | Undo journal | `%LOCALAPPDATA%\StartMenuOrganizerPro\undo.json` |
 | Undo backups | `%LOCALAPPDATA%\StartMenuOrganizerPro\UndoBackups` |
 | Config | `%LOCALAPPDATA%\StartMenuOrganizerPro\config.json` |
+| Logs and crash reports | `%LOCALAPPDATA%\StartMenuOrganizerPro\Logs` |
 
 ## Development
 
@@ -242,6 +244,12 @@ Run the settings persistence regression test:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\SettingsPersistence.Tests.ps1
 ```
 
+Run the structured logging regression test:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\Logging.Tests.ps1
+```
+
 ## Troubleshooting
 
 ### "Access Denied" errors
@@ -259,6 +267,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\SettingsPersistence.
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
+
+### Crash or failed operation diagnostics
+- Check `%LOCALAPPDATA%\StartMenuOrganizerPro\Logs` for dated `.jsonl` logs and `StartMenuOrganizer-Crash-*.log` files
 
 ## Related Tools
 

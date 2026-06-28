@@ -90,7 +90,8 @@ foreach ($functionName in $helperFunctions) {
 function Write-Log {
     param(
         [string]$Message,
-        [string]$Level = 'Info'
+        [string]$Level = 'Info',
+        [string]$OperationId = $null
     )
 }
 

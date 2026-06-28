@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.11.0 - 2026-06-28
+
+- Added dated JSONL file logging under `%LOCALAPPDATA%\StartMenuOrganizerPro\Logs`.
+- Added crash-log files for unhandled WPF dispatcher, AppDomain, and top-level runtime exceptions before the user-facing error message is shown.
+- Added operation IDs to guarded operation results, journal items, and journal-related log entries.
+- Added log rotation and structured logging regression coverage.
+
 ## v0.10.0 - 2026-06-28
 
 - Added a local release-package builder that creates `StartMenuOrganizer-v0.10.0.zip`.
