@@ -2,7 +2,7 @@
 
 A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, remove duplicates, organize by category, and take full control of your Start Menu.
 
-![Version](https://img.shields.io/badge/Version-v0.7.0-blue)
+![Version](https://img.shields.io/badge/Version-v0.8.0-blue)
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-blue)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6)
 ![License](https://img.shields.io/badge/License-MIT-green)
@@ -54,6 +54,7 @@ A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, re
 - **Fail-Closed Restore** - Validates backup contents in staging and preserves a pre-restore rollback snapshot before replacing live entries
 - **Editable Transaction Plans** - Preview bulk actions into JSON plans that can be reviewed, exported, imported, and executed exactly
 - **Protected Folders** - Preserves built-in folders like Startup, Windows Tools, and Administrative Tools by default
+- **Persistent Settings** - Automatically saves scope, patterns, categories, and protected-folder preferences
 - **Preview Mode** - Dry-run any operation first
 - **Confirmation Dialogs** - No destructive action without explicit approval
 
@@ -207,6 +208,12 @@ Run the shortcut validation regression test:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\ShortcutValidation.Tests.ps1
+```
+
+Run the settings persistence regression test:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\SettingsPersistence.Tests.ps1
 ```
 
 ## Troubleshooting

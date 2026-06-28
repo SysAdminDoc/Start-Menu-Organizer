@@ -27,7 +27,8 @@
 # ============================================================================
 
 $script:Config = @{
-    Version         = "0.7.0"
+    Version         = "0.8.0"
+    SettingsSchema  = 1
     UserStartMenu   = [Environment]::GetFolderPath('StartMenu') + '\Programs'
     SystemStartMenu = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs"
     BackupRoot      = "$env:LOCALAPPDATA\StartMenuOrganizerPro\Backups"
@@ -966,6 +967,7 @@ $script:FilteredItems = [System.Collections.ObjectModel.ObservableCollection[PSO
 $dgItems.ItemsSource = $script:FilteredItems
 $script:CurrentOperationPlan = $null
 $script:ActiveWorker = $null
+$script:IsLoadingConfiguration = $false
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -3426,18 +3428,114 @@ function Restore-Backup {
     }
 }
 
+function Get-ConfigurationSnapshot {
+    $categorySnapshot = [ordered]@{}
+    foreach ($category in $script:Categories.Keys) {
+        $categorySnapshot[$category] = @($script:Categories[$category])
+    }
+
+    return [PSCustomObject]@{
+        SchemaVersion = $Config.SettingsSchema
+        SavedAt = (Get-Date).ToString('o')
+        ScopeIndex = if ($cmbScope) { $cmbScope.SelectedIndex } else { 2 }
+        JunkPatterns = @($script:JunkPatterns)
+        ProtectedFolders = @($script:ProtectedFolders)
+        Categories = $categorySnapshot
+    }
+}
+
+function Set-ObservableCollection {
+    param(
+        $Collection,
+        [array]$Values
+    )
+
+    $Collection.Clear()
+    foreach ($value in $Values) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$value)) {
+            $Collection.Add([string]$value)
+        }
+    }
+}
+
+function Apply-ConfigurationSnapshot {
+    param($Snapshot)
+
+    if (-not $Snapshot) {
+        throw "Configuration is empty."
+    }
+    if ($Snapshot.SchemaVersion -ne $Config.SettingsSchema) {
+        throw "Unsupported configuration schema: $($Snapshot.SchemaVersion)"
+    }
+    if (-not $Snapshot.JunkPatterns -or -not $Snapshot.Categories) {
+        throw "Configuration is missing required fields."
+    }
+
+    Set-ObservableCollection -Collection $script:JunkPatterns -Values @($Snapshot.JunkPatterns)
+    if ($Snapshot.ProtectedFolders) {
+        Set-ObservableCollection -Collection $script:ProtectedFolders -Values @($Snapshot.ProtectedFolders)
+    }
+
+    $newCategories = [ordered]@{}
+    foreach ($property in $Snapshot.Categories.PSObject.Properties) {
+        $newCategories[$property.Name] = @($property.Value)
+    }
+    if ($newCategories.Count -eq 0) {
+        throw "Configuration must contain at least one category."
+    }
+    $script:Categories = $newCategories
+
+    $previousLoadingState = $script:IsLoadingConfiguration
+    $script:IsLoadingConfiguration = $true
+    try {
+        if ($cmbScope -and $Snapshot.PSObject.Properties.Name -contains 'ScopeIndex') {
+            $scopeIndex = [int]$Snapshot.ScopeIndex
+            if ($scopeIndex -ge 0 -and $scopeIndex -le 2) {
+                $cmbScope.SelectedIndex = $scopeIndex
+            }
+        }
+    }
+    finally {
+        $script:IsLoadingConfiguration = $previousLoadingState
+    }
+}
+
+function Save-ApplicationConfiguration {
+    try {
+        $configDir = Split-Path $Config.ConfigFile -Parent
+        [System.IO.Directory]::CreateDirectory($configDir) | Out-Null
+        $json = Get-ConfigurationSnapshot | ConvertTo-Json -Depth 8
+        [System.IO.File]::WriteAllText($Config.ConfigFile, $json, [System.Text.UTF8Encoding]::new($false))
+        Write-Log "Settings saved." 'Info'
+    }
+    catch {
+        Write-Log "Failed to save settings: $($_.Exception.Message)" 'Error'
+    }
+}
+
+function Load-ApplicationConfiguration {
+    if (-not (Test-Path -LiteralPath $Config.ConfigFile)) { return }
+
+    try {
+        $snapshot = Get-Content -LiteralPath $Config.ConfigFile -Raw | ConvertFrom-Json
+        Apply-ConfigurationSnapshot -Snapshot $snapshot
+        Write-Log "Settings loaded." 'Success'
+    }
+    catch {
+        $badPath = "$($Config.ConfigFile).bad.$(Get-Date -Format 'yyyyMMddHHmmss')"
+        Move-Item -LiteralPath $Config.ConfigFile -Destination $badPath -Force -ErrorAction SilentlyContinue
+        Write-Log "Settings file was invalid and has been reset: $badPath" 'Warning'
+    }
+}
+
 function Export-Configuration {
     $saveDialog = [System.Windows.Forms.SaveFileDialog]::new()
     $saveDialog.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
     $saveDialog.FileName = "StartMenuOrganizerConfig.json"
-    
+
     if ($saveDialog.ShowDialog() -eq 'OK') {
-        $config = @{
-            JunkPatterns = @($script:JunkPatterns)
-            Categories = $script:Categories
-        }
-        
-        $config | ConvertTo-Json -Depth 5 | Set-Content -Path $saveDialog.FileName -Encoding UTF8
+        $json = Get-ConfigurationSnapshot | ConvertTo-Json -Depth 8
+        [System.IO.File]::WriteAllText($saveDialog.FileName, $json, [System.Text.UTF8Encoding]::new($false))
         Write-Log "Configuration exported: $($saveDialog.FileName)" 'Success'
     }
 }
@@ -3448,24 +3546,12 @@ function Import-Configuration {
     
     if ($openDialog.ShowDialog() -eq 'OK') {
         try {
-            $config = Get-Content -Path $openDialog.FileName -Raw | ConvertFrom-Json
-            
-            if ($config.JunkPatterns) {
-                $script:JunkPatterns.Clear()
-                foreach ($pattern in $config.JunkPatterns) {
-                    $script:JunkPatterns.Add($pattern)
-                }
-            }
-            
-            if ($config.Categories) {
-                $script:Categories = [ordered]@{}
-                foreach ($prop in $config.Categories.PSObject.Properties) {
-                    $script:Categories[$prop.Name] = @($prop.Value)
-                }
-                Refresh-CategoryUI
-            }
-            
+            $config = Get-Content -LiteralPath $openDialog.FileName -Raw | ConvertFrom-Json
+            Apply-ConfigurationSnapshot -Snapshot $config
+            Save-ApplicationConfiguration
+            Refresh-CategoryUI
             Refresh-JunkPatternsUI
+            Refresh-CategoryPatternsUI
             Write-Log "Configuration imported: $($openDialog.FileName)" 'Success'
             Refresh-Items
         }
@@ -3493,7 +3579,8 @@ function Reset-Configuration {
         '*user guide*', '*online *', '*web link*', '*url*', '*register*',
         '*feedback*', '*update*', '*check for update*'
     ) | ForEach-Object { $script:JunkPatterns.Add($_) }
-    
+
+    Save-ApplicationConfiguration
     Refresh-JunkPatternsUI
     Write-Log "Configuration reset to defaults" 'Success'
     Refresh-Items
@@ -3553,7 +3640,11 @@ $txtReplaceText.Add_LostFocus({ if ([string]::IsNullOrEmpty($txtReplaceText.Text
 # Refresh and scope
 $btnRefresh.Add_Click({ Refresh-Items })
 $btnCancelWork.Add_Click({ Stop-BackgroundWorker })
-$cmbScope.Add_SelectionChanged({ Refresh-Items })
+$cmbScope.Add_SelectionChanged({
+    if ($script:IsLoadingConfiguration) { return }
+    Save-ApplicationConfiguration
+    Refresh-Items
+})
 $cmbSort.Add_SelectionChanged({ Apply-Filters })
 
 # Filter checkboxes
@@ -3652,6 +3743,7 @@ $btnAddJunkPattern.Add_Click({
         Refresh-JunkPatternsUI
         $txtNewJunkPattern.Text = ''
         Write-Log "Added junk pattern: $pattern" 'Success'
+        Save-ApplicationConfiguration
         Refresh-Items
     }
 })
@@ -3662,6 +3754,7 @@ $btnRemoveJunkPattern.Add_Click({
         $script:JunkPatterns.Remove($selected)
         Refresh-JunkPatternsUI
         Write-Log "Removed junk pattern: $selected" 'Success'
+        Save-ApplicationConfiguration
         Refresh-Items
     }
 })
@@ -3679,6 +3772,7 @@ $btnAddCategoryPattern.Add_Click({
             Refresh-CategoryPatternsUI
             $txtNewCategoryPattern.Text = ''
             Write-Log "Added pattern '$pattern' to category '$category'" 'Success'
+            Save-ApplicationConfiguration
         }
     }
 })
@@ -3691,6 +3785,7 @@ $btnRemoveCategoryPattern.Add_Click({
         $script:Categories[$category] = @($script:Categories[$category] | Where-Object { $_ -ne $selected })
         Refresh-CategoryPatternsUI
         Write-Log "Removed pattern '$selected' from category '$category'" 'Success'
+        Save-ApplicationConfiguration
     }
 })
 
@@ -3821,6 +3916,7 @@ $configDir = Split-Path $Config.ConfigFile -Parent
 if (-not (Test-Path $configDir)) {
     New-Item -Path $configDir -ItemType Directory -Force | Out-Null
 }
+Load-ApplicationConfiguration
 Load-UndoJournal
 
 # Populate UI

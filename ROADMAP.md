@@ -2,13 +2,6 @@
 
 ## Research-Driven Additions
 
-- [ ] P1 - Persist settings automatically
-  Why: The UI supports import/export but does not load `$Config.ConfigFile` at startup or save edits as user preferences.
-  Evidence: `StartMenuOrganizerPro.ps1:33`, `StartMenuOrganizerPro.ps1:2070`, `StartMenuOrganizerPro.ps1:2091`, Start Menu Helper options model.
-  Touches: initialization, settings tab handlers, config schema/versioning.
-  Acceptance: Junk patterns/categories/scope defaults persist to `%LOCALAPPDATA%`, load on startup, validate schema version, and recover cleanly from invalid JSON.
-  Complexity: M
-
 - [ ] P1 - Add Pester and PSScriptAnalyzer test gates
   Why: The repo has no tests for destructive operations and PSScriptAnalyzer already reports maintainability findings.
   Evidence: local parser pass, PSScriptAnalyzer 1.25.0 findings, Pester project.

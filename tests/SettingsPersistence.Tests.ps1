@@ -1,0 +1,101 @@
+#Requires -Version 5.1
+
+$ErrorActionPreference = 'Stop'
+
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$scriptPath = Join-Path $repoRoot 'StartMenuOrganizerPro.ps1'
+$tokens = $null
+$parseErrors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref]$tokens, [ref]$parseErrors)
+if ($parseErrors.Count -gt 0) {
+    $messages = $parseErrors | ForEach-Object { $_.Message }
+    throw "Parser errors found:`n$($messages -join "`n")"
+}
+
+$helperFunctions = @(
+    'Get-ConfigurationSnapshot',
+    'Set-ObservableCollection',
+    'Apply-ConfigurationSnapshot',
+    'Save-ApplicationConfiguration',
+    'Load-ApplicationConfiguration'
+)
+
+foreach ($functionName in $helperFunctions) {
+    $functionAst = $ast.Find({
+        param($node)
+        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+            $node.Name -eq $functionName
+    }, $true)
+
+    if (-not $functionAst) {
+        throw "Failed: helper function not found: $functionName"
+    }
+
+    Invoke-Expression $functionAst.Extent.Text
+}
+
+function Write-Log {
+    param(
+        [string]$Message,
+        [string]$Level = 'Info'
+    )
+}
+
+$testRoot = Join-Path $env:TEMP "StartMenuOrganizerSettings_$([System.Guid]::NewGuid().ToString('N'))"
+try {
+    [System.IO.Directory]::CreateDirectory($testRoot) | Out-Null
+    $script:Config = @{
+        SettingsSchema = 1
+        ConfigFile = Join-Path $testRoot 'config.json'
+    }
+    $script:IsLoadingConfiguration = $false
+    $cmbScope = [PSCustomObject]@{ SelectedIndex = 1 }
+    $script:JunkPatterns = [System.Collections.ObjectModel.ObservableCollection[string]]@('*junk*')
+    $script:ProtectedFolders = [System.Collections.ObjectModel.ObservableCollection[string]]@('Startup')
+    $script:Categories = [ordered]@{
+        Utilities = @('Tool*')
+    }
+
+    Save-ApplicationConfiguration
+    if (-not (Test-Path -LiteralPath $script:Config.ConfigFile)) {
+        throw 'Failed: config file was not written.'
+    }
+
+    $saved = Get-Content -LiteralPath $script:Config.ConfigFile -Raw | ConvertFrom-Json
+    if ($saved.SchemaVersion -ne 1 -or $saved.ScopeIndex -ne 1) {
+        throw 'Failed: saved config schema or scope was incorrect.'
+    }
+
+    $script:JunkPatterns = [System.Collections.ObjectModel.ObservableCollection[string]]@('*changed*')
+    $script:ProtectedFolders = [System.Collections.ObjectModel.ObservableCollection[string]]@('Changed')
+    $script:Categories = [ordered]@{ Changed = @('Changed*') }
+    $cmbScope.SelectedIndex = 0
+
+    Load-ApplicationConfiguration
+    if ($script:JunkPatterns[0] -ne '*junk*') {
+        throw 'Failed: junk patterns were not loaded.'
+    }
+    if ($script:ProtectedFolders[0] -ne 'Startup') {
+        throw 'Failed: protected folders were not loaded.'
+    }
+    if (-not $script:Categories.Contains('Utilities')) {
+        throw 'Failed: categories were not loaded.'
+    }
+    if ($cmbScope.SelectedIndex -ne 1) {
+        throw 'Failed: saved scope was not loaded.'
+    }
+
+    Set-Content -LiteralPath $script:Config.ConfigFile -Value '{ invalid json'
+    Load-ApplicationConfiguration
+    $badFiles = @(Get-ChildItem -LiteralPath $testRoot -Filter 'config.json.bad.*')
+    if ($badFiles.Count -ne 1) {
+        throw 'Failed: invalid config was not moved aside.'
+    }
+}
+finally {
+    if (Test-Path -LiteralPath $testRoot) {
+        Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+'Settings persistence tests passed.'

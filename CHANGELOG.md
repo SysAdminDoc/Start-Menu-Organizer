@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.8.0 - 2026-06-28
+
+- Added versioned settings persistence for scope, junk patterns, protected folders, and category patterns.
+- Loaded saved settings on startup and auto-saved scope and settings edits.
+- Updated config import/export to use the same schema and recover from invalid JSON by moving bad files aside.
+- Added settings persistence regression coverage.
+
 ## v0.7.0 - 2026-06-28
 
 - Added built-in protected Start Menu folder detection for folders such as Startup, Windows Tools, Windows PowerShell, and Administrative Tools.
