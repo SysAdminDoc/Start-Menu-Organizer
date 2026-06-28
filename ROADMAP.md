@@ -2,13 +2,6 @@
 
 ## Research-Driven Additions
 
-- [ ] P0 - Add persistent undo and operation journal
-  Why: `$Config.UndoFile` exists but undo is only in memory and deletion recovery uses temp files that may disappear after exit.
-  Evidence: `StartMenuOrganizerPro.ps1:34`, `StartMenuOrganizerPro.ps1:80`, `StartMenuOrganizerPro.ps1:1306`, ClearWinStart logging model.
-  Touches: `StartMenuOrganizerPro.ps1` undo, delete, move, rename, backup storage.
-  Acceptance: Every destructive operation writes a JSON journal with original path, new path, backup path, action type, timestamp, and result; undo after restart restores the last reversible action.
-  Complexity: M
-
 - [ ] P0 - Centralize guarded file operations
   Why: Destructive calls are scattered across actions with mixed error handling and wildcard paths.
   Evidence: `StartMenuOrganizerPro.ps1:1331`, `StartMenuOrganizerPro.ps1:1523`, `StartMenuOrganizerPro.ps1:1651`, `StartMenuOrganizerPro.ps1:1792`, PSScriptAnalyzer `PSUseShouldProcessForStateChangingFunctions`.

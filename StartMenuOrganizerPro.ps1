@@ -27,12 +27,13 @@
 # ============================================================================
 
 $script:Config = @{
-    Version         = "0.1.0"
+    Version         = "0.2.0"
     UserStartMenu   = [Environment]::GetFolderPath('StartMenu') + '\Programs'
     SystemStartMenu = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs"
     BackupRoot      = "$env:LOCALAPPDATA\StartMenuOrganizerPro\Backups"
     ConfigFile      = "$env:LOCALAPPDATA\StartMenuOrganizerPro\config.json"
     UndoFile        = "$env:LOCALAPPDATA\StartMenuOrganizerPro\undo.json"
+    UndoBackupRoot  = "$env:LOCALAPPDATA\StartMenuOrganizerPro\UndoBackups"
     MaxUndoSteps    = 50
 }
 
@@ -1029,78 +1030,254 @@ function Get-ItemStatus {
     return $statuses -join ', '
 }
 
+function Ensure-JournalStorage {
+    $journalDir = Split-Path $Config.UndoFile -Parent
+    [System.IO.Directory]::CreateDirectory($journalDir) | Out-Null
+    [System.IO.Directory]::CreateDirectory($Config.UndoBackupRoot) | Out-Null
+}
+
+function New-OperationId {
+    return [System.Guid]::NewGuid().ToString('N')
+}
+
+function New-UndoBackupCopy {
+    param(
+        [string]$SourcePath,
+        [string]$OperationId
+    )
+
+    if (-not (Test-Path -LiteralPath $SourcePath)) {
+        return $null
+    }
+
+    Ensure-JournalStorage
+    $backupDir = Join-Path $Config.UndoBackupRoot $OperationId
+    [System.IO.Directory]::CreateDirectory($backupDir) | Out-Null
+
+    $leafName = Split-Path $SourcePath -Leaf
+    if ([string]::IsNullOrWhiteSpace($leafName)) {
+        $leafName = 'item'
+    }
+
+    $backupPath = Join-Path $backupDir "$([System.Guid]::NewGuid().ToString('N'))_$leafName"
+    Copy-Item -LiteralPath $SourcePath -Destination $backupPath -Recurse -Force -ErrorAction Stop
+    return $backupPath
+}
+
+function New-JournalItem {
+    param(
+        [string]$ActionType,
+        [string]$OriginalPath,
+        [string]$NewPath = $null,
+        [string]$BackupPath = $null,
+        [string]$Result = 'Success',
+        [string]$Message = ''
+    )
+
+    return [PSCustomObject]@{
+        ActionType   = $ActionType
+        OriginalPath = $OriginalPath
+        NewPath      = $NewPath
+        BackupPath   = $BackupPath
+        Timestamp    = (Get-Date).ToString('o')
+        Result       = $Result
+        Message      = $Message
+    }
+}
+
+function Save-UndoJournal {
+    Ensure-JournalStorage
+    if ($script:UndoStack.Count -eq 0) {
+        $json = '[]'
+    }
+    else {
+        $json = @($script:UndoStack) | ConvertTo-Json -Depth 12
+    }
+    [System.IO.File]::WriteAllText($Config.UndoFile, $json, [System.Text.UTF8Encoding]::new($false))
+}
+
+function Load-UndoJournal {
+    Ensure-JournalStorage
+    $script:UndoStack.Clear()
+
+    if (Test-Path -LiteralPath $Config.UndoFile) {
+        try {
+            $loaded = @(Get-Content -LiteralPath $Config.UndoFile -Raw | ConvertFrom-Json)
+            foreach ($entry in $loaded) {
+                if ($entry) {
+                    $script:UndoStack.Add($entry)
+                }
+            }
+
+            while ($script:UndoStack.Count -gt $Config.MaxUndoSteps) {
+                $script:UndoStack.RemoveAt(0)
+            }
+        }
+        catch {
+            $badPath = "$($Config.UndoFile).bad.$(Get-Date -Format 'yyyyMMddHHmmss')"
+            Move-Item -LiteralPath $Config.UndoFile -Destination $badPath -Force -ErrorAction SilentlyContinue
+            Write-Log "Undo journal was invalid and has been reset: $badPath" 'Warning'
+        }
+    }
+
+    $Window.Dispatcher.Invoke([Action]{ $btnUndo.IsEnabled = ($script:UndoStack.Count -gt 0) })
+}
+
+function Add-JournalEntry {
+    param(
+        [string]$Type,
+        [string]$Description,
+        [array]$Items,
+        [string]$OperationId = (New-OperationId)
+    )
+
+    $journalItems = @($Items | Where-Object { $_ })
+    if ($journalItems.Count -eq 0) { return }
+
+    $hasFailure = @($journalItems | Where-Object { $_.Result -ne 'Success' }).Count -gt 0
+    $undoData = [PSCustomObject]@{
+        OperationId = $OperationId
+        Type = $Type
+        ActionType = $Type
+        Description = $Description
+        Timestamp = (Get-Date).ToString('o')
+        Result = if ($hasFailure) { 'Partial' } else { 'Success' }
+        Items = $journalItems
+    }
+
+    $script:UndoStack.Add($undoData)
+    if ($script:UndoStack.Count -gt $Config.MaxUndoSteps) {
+        $script:UndoStack.RemoveAt(0)
+    }
+
+    Save-UndoJournal
+    $Window.Dispatcher.Invoke([Action]{ $btnUndo.IsEnabled = $true })
+}
+
 function Add-UndoAction {
     param(
         [string]$ActionType,
         [string]$Description,
         [array]$Items
     )
-    
-    $undoData = @{
-        Type = $ActionType
-        Description = $Description
-        Timestamp = Get-Date
-        Items = $Items | ForEach-Object {
-            @{
-                OriginalPath = $_.FullPath
-                OriginalName = $_.DisplayName
-                BasePath = $_.BasePath
-                BackupPath = $null
-            }
+
+    $records = @($Items | ForEach-Object {
+        New-JournalItem -ActionType $ActionType -OriginalPath $_.FullPath -BackupPath $null -Result 'Success'
+    })
+    Add-JournalEntry -Type $ActionType -Description $Description -Items $records
+}
+
+function Invoke-JournaledDelete {
+    param(
+        [string]$Path,
+        [string]$OperationId
+    )
+
+    $backupPath = New-UndoBackupCopy -SourcePath $Path -OperationId $OperationId
+    Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+    return New-JournalItem -ActionType 'Delete' -OriginalPath $Path -BackupPath $backupPath -Result 'Success'
+}
+
+function Invoke-JournaledMove {
+    param(
+        [string]$SourcePath,
+        [string]$DestinationPath,
+        [string]$OperationId
+    )
+
+    $backupPath = New-UndoBackupCopy -SourcePath $SourcePath -OperationId $OperationId
+    Move-Item -LiteralPath $SourcePath -Destination $DestinationPath -Force -ErrorAction Stop
+    return New-JournalItem -ActionType 'Move' -OriginalPath $SourcePath -NewPath $DestinationPath -BackupPath $backupPath -Result 'Success'
+}
+
+function Invoke-JournaledRename {
+    param(
+        [string]$SourcePath,
+        [string]$NewName,
+        [string]$OperationId
+    )
+
+    $backupPath = New-UndoBackupCopy -SourcePath $SourcePath -OperationId $OperationId
+    $newPath = Join-Path (Split-Path $SourcePath -Parent) $NewName
+    Rename-Item -LiteralPath $SourcePath -NewName $NewName -Force -ErrorAction Stop
+    return New-JournalItem -ActionType 'Rename' -OriginalPath $SourcePath -NewPath $newPath -BackupPath $backupPath -Result 'Success'
+}
+
+function Restore-JournalBackup {
+    param($Item)
+
+    if ($Item.BackupPath -and (Test-Path -LiteralPath $Item.BackupPath)) {
+        $destDir = Split-Path $Item.OriginalPath -Parent
+        if (-not (Test-Path -LiteralPath $destDir)) {
+            [System.IO.Directory]::CreateDirectory($destDir) | Out-Null
         }
+        Copy-Item -LiteralPath $Item.BackupPath -Destination $Item.OriginalPath -Recurse -Force -ErrorAction Stop
+        return $true
     }
-    
-    $script:UndoStack.Add($undoData)
-    if ($script:UndoStack.Count -gt $Config.MaxUndoSteps) {
-        $script:UndoStack.RemoveAt(0)
-    }
-    
-    $Window.Dispatcher.Invoke([Action]{ $btnUndo.IsEnabled = $true })
+
+    return $false
 }
 
 function Invoke-Undo {
     if ($script:UndoStack.Count -eq 0) { return }
-    
+
     $lastAction = $script:UndoStack[$script:UndoStack.Count - 1]
     $script:UndoStack.RemoveAt($script:UndoStack.Count - 1)
-    
+
     Write-Log "Undo: $($lastAction.Description)" 'Warning'
-    
-    # Undo logic depends on action type
-    switch ($lastAction.Type) {
-        'Delete' {
-            # Restore from backup if available
-            foreach ($item in $lastAction.Items) {
-                if ($item.BackupPath -and (Test-Path $item.BackupPath)) {
-                    $destDir = Split-Path $item.OriginalPath -Parent
-                    if (-not (Test-Path $destDir)) {
-                        New-Item -Path $destDir -ItemType Directory -Force | Out-Null
+
+    $items = @($lastAction.Items)
+    for ($i = $items.Count - 1; $i -ge 0; $i--) {
+        $item = $items[$i]
+        if ($item.Result -ne 'Success') { continue }
+
+        try {
+            switch ($item.ActionType) {
+                'Delete' {
+                    Restore-JournalBackup -Item $item | Out-Null
+                }
+                'Move' {
+                    if ($item.NewPath -and (Test-Path -LiteralPath $item.NewPath)) {
+                        $destDir = Split-Path $item.OriginalPath -Parent
+                        if (-not (Test-Path -LiteralPath $destDir)) {
+                            [System.IO.Directory]::CreateDirectory($destDir) | Out-Null
+                        }
+                        Move-Item -LiteralPath $item.NewPath -Destination $item.OriginalPath -Force -ErrorAction Stop
                     }
-                    Move-Item -Path $item.BackupPath -Destination $item.OriginalPath -Force -ErrorAction SilentlyContinue
+                    else {
+                        Restore-JournalBackup -Item $item | Out-Null
+                    }
+                }
+                'Rename' {
+                    if ($item.NewPath -and (Test-Path -LiteralPath $item.NewPath)) {
+                        $destDir = Split-Path $item.OriginalPath -Parent
+                        if (-not (Test-Path -LiteralPath $destDir)) {
+                            [System.IO.Directory]::CreateDirectory($destDir) | Out-Null
+                        }
+                        Move-Item -LiteralPath $item.NewPath -Destination $item.OriginalPath -Force -ErrorAction Stop
+                    }
+                    else {
+                        Restore-JournalBackup -Item $item | Out-Null
+                    }
+                }
+                'Restore' {
+                    if ($item.BackupPath -and (Test-Path -LiteralPath $item.BackupPath -PathType Container)) {
+                        Clear-DirectoryContents -Path $item.OriginalPath
+                        Copy-DirectoryContents -SourcePath $item.BackupPath -DestinationPath $item.OriginalPath | Out-Null
+                    }
                 }
             }
         }
-        'Move' {
-            foreach ($item in $lastAction.Items) {
-                if (Test-Path $item.NewPath) {
-                    Move-Item -Path $item.NewPath -Destination $item.OriginalPath -Force -ErrorAction SilentlyContinue
-                }
-            }
-        }
-        'Rename' {
-            foreach ($item in $lastAction.Items) {
-                $currentPath = Join-Path (Split-Path $item.OriginalPath -Parent) $item.NewName
-                if (Test-Path $currentPath) {
-                    Rename-Item -Path $currentPath -NewName $item.OriginalName -Force -ErrorAction SilentlyContinue
-                }
-            }
+        catch {
+            Write-Log "Undo failed for $($item.ActionType) $($item.OriginalPath): $($_.Exception.Message)" 'Error'
         }
     }
-    
+
+    Save-UndoJournal
     if ($script:UndoStack.Count -eq 0) {
         $Window.Dispatcher.Invoke([Action]{ $btnUndo.IsEnabled = $false })
     }
-    
+
     Refresh-Items
 }
 
@@ -1316,10 +1493,7 @@ function Delete-SelectedItems {
     
     if ($result -ne 'Yes') { return }
     
-    # Create temp backup for undo
-    $tempBackup = Join-Path $env:TEMP "StartMenuOrganizer_$(Get-Date -Format 'yyyyMMddHHmmss')"
-    New-Item -Path $tempBackup -ItemType Directory -Force | Out-Null
-    
+    $operationId = New-OperationId
     $undoItems = @()
     $deleted = 0
     $failed = 0
@@ -1333,41 +1507,26 @@ function Delete-SelectedItems {
         try {
             if ($item.IsSystem -and -not $script:IsAdmin) {
                 Write-Log "Skipped (need admin): $($item.DisplayName)" 'Warning'
+                $undoItems += New-JournalItem -ActionType 'Delete' -OriginalPath $item.FullPath -Result 'Skipped' -Message 'Administrator privileges required'
                 $failed++
                 continue
             }
             
             if (Test-Path $item.FullPath) {
-                # Backup for undo
-                $backupDest = Join-Path $tempBackup ([System.IO.Path]::GetRandomFileName())
-                Copy-Item -Path $item.FullPath -Destination $backupDest -Recurse -Force
-                
-                Remove-Item -Path $item.FullPath -Recurse -Force -ErrorAction Stop
+                $undoItems += Invoke-JournaledDelete -Path $item.FullPath -OperationId $operationId
                 Write-Log "Deleted: $($item.DisplayName)" 'Success'
-                
-                $undoItems += @{
-                    OriginalPath = $item.FullPath
-                    OriginalName = $item.DisplayName
-                    BasePath = $item.BasePath
-                    BackupPath = $backupDest
-                }
                 $deleted++
             }
         }
         catch {
             Write-Log "Failed to delete: $($item.DisplayName) - $_" 'Error'
+            $undoItems += New-JournalItem -ActionType 'Delete' -OriginalPath $item.FullPath -Result 'Failed' -Message $_.Exception.Message
             $failed++
         }
     }
-    
+
     if ($undoItems.Count -gt 0) {
-        $script:UndoStack.Add(@{
-            Type = 'Delete'
-            Description = "Delete $deleted item(s)"
-            Timestamp = Get-Date
-            Items = $undoItems
-        })
-        $btnUndo.IsEnabled = $true
+        Add-JournalEntry -Type 'Delete' -Description "Delete $deleted item(s)" -Items $undoItems -OperationId $operationId
     }
     
     Show-Progress -Visible $false
@@ -1525,26 +1684,33 @@ function Flatten-SingleItemFolders {
     
     if ($result -ne 'Yes') { return }
     
+    $operationId = New-OperationId
+    $journalItems = @()
     $flattened = 0
     foreach ($item in $toFlatten) {
         try {
             $destPath = Join-Path $item.BasePath $item.Shortcut.Name
-            
+
             if (Test-Path $destPath) {
                 $destPath = Join-Path $item.BasePath "$($item.Folder.Name) - $($item.Shortcut.Name)"
             }
-            
-            Move-Item -Path $item.Shortcut.FullName -Destination $destPath -Force
-            Remove-Item -Path $item.Folder.FullName -Force -Recurse
-            
+
+            $journalItems += Invoke-JournaledMove -SourcePath $item.Shortcut.FullName -DestinationPath $destPath -OperationId $operationId
+            $journalItems += Invoke-JournaledDelete -Path $item.Folder.FullName -OperationId $operationId
+
             Write-Log "Flattened: $($item.Folder.Name)" 'Success'
             $flattened++
         }
         catch {
             Write-Log "Failed to flatten: $($item.Folder.Name) - $_" 'Error'
+            $journalItems += New-JournalItem -ActionType 'Flatten' -OriginalPath $item.Folder.FullName -Result 'Failed' -Message $_.Exception.Message
         }
     }
-    
+
+    if ($journalItems.Count -gt 0) {
+        Add-JournalEntry -Type 'Flatten' -Description "Flatten $flattened folder(s)" -Items $journalItems -OperationId $operationId
+    }
+
     Write-Log "Flattening complete: $flattened folders flattened" 'Info'
     Refresh-Items
 }
@@ -1582,18 +1748,25 @@ function Remove-EmptyFolders {
         return
     }
     
+    $operationId = New-OperationId
+    $journalItems = @()
     $removed = 0
     foreach ($folder in $emptyFolders) {
         try {
-            Remove-Item -Path $folder.FullName -Force
+            $journalItems += Invoke-JournaledDelete -Path $folder.FullName -OperationId $operationId
             Write-Log "Removed empty: $($folder.Name)" 'Success'
             $removed++
         }
         catch {
             Write-Log "Failed to remove: $($folder.Name) - $_" 'Error'
+            $journalItems += New-JournalItem -ActionType 'Delete' -OriginalPath $folder.FullName -Result 'Failed' -Message $_.Exception.Message
         }
     }
-    
+
+    if ($journalItems.Count -gt 0) {
+        Add-JournalEntry -Type 'Delete' -Description "Remove $removed empty folder(s)" -Items $journalItems -OperationId $operationId
+    }
+
     Write-Log "Removed $removed empty folders" 'Info'
     Refresh-Items
 }
@@ -1643,6 +1816,8 @@ function Move-AllToRoot {
     
     if ($result -ne 'Yes') { return }
     
+    $operationId = New-OperationId
+    $journalItems = @()
     $moved = 0
     $skipped = 0
     Show-Progress -Value 0 -Maximum $toMove.Count
@@ -1662,7 +1837,7 @@ function Move-AllToRoot {
                 
                 if ($existingTarget -eq $newTarget) {
                     # Same target, just delete the duplicate
-                    Remove-Item -Path $entry.Item.FullName -Force
+                    $journalItems += Invoke-JournaledDelete -Path $entry.Item.FullName -OperationId $operationId
                     Write-Log "Removed duplicate: $($entry.Item.BaseName)" 'Info'
                     $skipped++
                     continue
@@ -1677,16 +1852,21 @@ function Move-AllToRoot {
                     $counter++
                 } while (Test-Path $destPath)
             }
-            
-            Move-Item -Path $entry.Item.FullName -Destination $destPath -Force
+
+            $journalItems += Invoke-JournaledMove -SourcePath $entry.Item.FullName -DestinationPath $destPath -OperationId $operationId
             Write-Log "Moved to root: $($entry.Item.BaseName)" 'Success'
             $moved++
         }
         catch {
             Write-Log "Failed to move: $($entry.Item.BaseName) - $_" 'Error'
+            $journalItems += New-JournalItem -ActionType 'Move' -OriginalPath $entry.Item.FullName -NewPath $destPath -Result 'Failed' -Message $_.Exception.Message
         }
     }
-    
+
+    if ($journalItems.Count -gt 0) {
+        Add-JournalEntry -Type 'Move' -Description "Move $moved shortcut(s) to root" -Items $journalItems -OperationId $operationId
+    }
+
     Show-Progress -Visible $false
     
     # Clean up empty folders
@@ -1716,29 +1896,38 @@ function Move-ToCategory {
         return
     }
     
+    $operationId = New-OperationId
+    $journalItems = @()
     $moved = 0
     foreach ($item in $selected) {
         if ($item.IsSystem -and -not $script:IsAdmin) {
             Write-Log "Skipped (need admin): $($item.DisplayName)" 'Warning'
+            $journalItems += New-JournalItem -ActionType 'Move' -OriginalPath $item.FullPath -Result 'Skipped' -Message 'Administrator privileges required'
             continue
         }
-        
+
+        $destPath = $null
         try {
             $categoryPath = Join-Path $item.BasePath $CategoryName
             if (-not (Test-Path $categoryPath)) {
                 New-Item -Path $categoryPath -ItemType Directory -Force | Out-Null
             }
-            
+
             $destPath = Join-Path $categoryPath (Split-Path $item.FullPath -Leaf)
-            Move-Item -Path $item.FullPath -Destination $destPath -Force
+            $journalItems += Invoke-JournaledMove -SourcePath $item.FullPath -DestinationPath $destPath -OperationId $operationId
             Write-Log "Moved to $CategoryName`: $($item.DisplayName)" 'Success'
             $moved++
         }
         catch {
             Write-Log "Failed to move: $($item.DisplayName) - $_" 'Error'
+            $journalItems += New-JournalItem -ActionType 'Move' -OriginalPath $item.FullPath -NewPath $destPath -Result 'Failed' -Message $_.Exception.Message
         }
     }
-    
+
+    if ($journalItems.Count -gt 0) {
+        Add-JournalEntry -Type 'Move' -Description "Move $moved item(s) to $CategoryName" -Items $journalItems -OperationId $operationId
+    }
+
     Write-Log "Moved $moved items to $CategoryName" 'Info'
     Refresh-Items
 }
@@ -1788,6 +1977,8 @@ function Auto-OrganizeAll {
     
     if ($result -ne 'Yes') { return }
     
+    $operationId = New-OperationId
+    $journalItems = @()
     $organized = 0
     Show-Progress -Value 0 -Maximum $toOrganize.Count
     
@@ -1795,24 +1986,30 @@ function Auto-OrganizeAll {
         $entry = $toOrganize[$i]
         Show-Progress -Value ($i + 1) -Maximum $toOrganize.Count
         
+        $destPath = $null
         try {
             $categoryPath = Join-Path $entry.BasePath $entry.Category
             if (-not (Test-Path $categoryPath)) {
                 New-Item -Path $categoryPath -ItemType Directory -Force | Out-Null
             }
-            
+
             $destPath = Join-Path $categoryPath $entry.Item.Name
             if (-not (Test-Path $destPath)) {
-                Move-Item -Path $entry.Item.FullName -Destination $destPath -Force
+                $journalItems += Invoke-JournaledMove -SourcePath $entry.Item.FullName -DestinationPath $destPath -OperationId $operationId
                 Write-Log "Organized: $($entry.Item.BaseName) -> $($entry.Category)" 'Success'
                 $organized++
             }
         }
         catch {
             Write-Log "Failed: $($entry.Item.BaseName) - $_" 'Error'
+            $journalItems += New-JournalItem -ActionType 'Move' -OriginalPath $entry.Item.FullName -NewPath $destPath -Result 'Failed' -Message $_.Exception.Message
         }
     }
-    
+
+    if ($journalItems.Count -gt 0) {
+        Add-JournalEntry -Type 'Move' -Description "Auto-organize $organized item(s)" -Items $journalItems -OperationId $operationId
+    }
+
     Show-Progress -Visible $false
     
     # Clean up empty folders
@@ -1870,25 +2067,36 @@ function Strip-VersionNumbers {
         return
     }
     
+    $operationId = New-OperationId
+    $journalItems = @()
     $renamed = 0
     foreach ($entry in $toRename) {
-        if ($entry.Item.IsSystem -and -not $script:IsAdmin) { continue }
-        
+        if ($entry.Item.IsSystem -and -not $script:IsAdmin) {
+            $journalItems += New-JournalItem -ActionType 'Rename' -OriginalPath $entry.Item.FullPath -Result 'Skipped' -Message 'Administrator privileges required'
+            continue
+        }
+
+        $newPath = $null
         try {
             $ext = [System.IO.Path]::GetExtension($entry.Item.FullPath)
             $newPath = Join-Path (Split-Path $entry.Item.FullPath -Parent) "$($entry.NewName)$ext"
-            
+
             if (-not (Test-Path $newPath)) {
-                Rename-Item -Path $entry.Item.FullPath -NewName "$($entry.NewName)$ext" -Force
+                $journalItems += Invoke-JournaledRename -SourcePath $entry.Item.FullPath -NewName "$($entry.NewName)$ext" -OperationId $operationId
                 Write-Log "Renamed: '$($entry.Item.DisplayName)' -> '$($entry.NewName)'" 'Success'
                 $renamed++
             }
         }
         catch {
             Write-Log "Failed to rename: $($entry.Item.DisplayName) - $_" 'Error'
+            $journalItems += New-JournalItem -ActionType 'Rename' -OriginalPath $entry.Item.FullPath -NewPath $newPath -Result 'Failed' -Message $_.Exception.Message
         }
     }
-    
+
+    if ($journalItems.Count -gt 0) {
+        Add-JournalEntry -Type 'Rename' -Description "Rename $renamed item(s)" -Items $journalItems -OperationId $operationId
+    }
+
     Write-Log "Renamed $renamed items" 'Info'
     Refresh-Items
 }
@@ -1943,25 +2151,36 @@ function Clean-Names {
         return
     }
     
+    $operationId = New-OperationId
+    $journalItems = @()
     $renamed = 0
     foreach ($entry in $toRename) {
-        if ($entry.Item.IsSystem -and -not $script:IsAdmin) { continue }
-        
+        if ($entry.Item.IsSystem -and -not $script:IsAdmin) {
+            $journalItems += New-JournalItem -ActionType 'Rename' -OriginalPath $entry.Item.FullPath -Result 'Skipped' -Message 'Administrator privileges required'
+            continue
+        }
+
+        $newPath = $null
         try {
             $ext = [System.IO.Path]::GetExtension($entry.Item.FullPath)
             $newPath = Join-Path (Split-Path $entry.Item.FullPath -Parent) "$($entry.NewName)$ext"
-            
+
             if (-not (Test-Path $newPath)) {
-                Rename-Item -Path $entry.Item.FullPath -NewName "$($entry.NewName)$ext" -Force
+                $journalItems += Invoke-JournaledRename -SourcePath $entry.Item.FullPath -NewName "$($entry.NewName)$ext" -OperationId $operationId
                 Write-Log "Cleaned: '$($entry.Item.DisplayName)' -> '$($entry.NewName)'" 'Success'
                 $renamed++
             }
         }
         catch {
             Write-Log "Failed to clean: $($entry.Item.DisplayName) - $_" 'Error'
+            $journalItems += New-JournalItem -ActionType 'Rename' -OriginalPath $entry.Item.FullPath -NewPath $newPath -Result 'Failed' -Message $_.Exception.Message
         }
     }
-    
+
+    if ($journalItems.Count -gt 0) {
+        Add-JournalEntry -Type 'Rename' -Description "Clean $renamed name(s)" -Items $journalItems -OperationId $operationId
+    }
+
     Write-Log "Cleaned $renamed names" 'Info'
     Refresh-Items
 }
@@ -2008,21 +2227,34 @@ function Find-Replace-Names {
         return
     }
     
+    $operationId = New-OperationId
+    $journalItems = @()
     $renamed = 0
     foreach ($entry in $toRename) {
-        if ($entry.Item.IsSystem -and -not $script:IsAdmin) { continue }
-        
+        if ($entry.Item.IsSystem -and -not $script:IsAdmin) {
+            $journalItems += New-JournalItem -ActionType 'Rename' -OriginalPath $entry.Item.FullPath -Result 'Skipped' -Message 'Administrator privileges required'
+            continue
+        }
+
+        $newPath = $null
         try {
             $ext = [System.IO.Path]::GetExtension($entry.Item.FullPath)
-            Rename-Item -Path $entry.Item.FullPath -NewName "$($entry.NewName)$ext" -Force
+            $newName = "$($entry.NewName)$ext"
+            $newPath = Join-Path (Split-Path $entry.Item.FullPath -Parent) $newName
+            $journalItems += Invoke-JournaledRename -SourcePath $entry.Item.FullPath -NewName $newName -OperationId $operationId
             Write-Log "Renamed: '$($entry.Item.DisplayName)' -> '$($entry.NewName)'" 'Success'
             $renamed++
         }
         catch {
             Write-Log "Failed: $($entry.Item.DisplayName) - $_" 'Error'
+            $journalItems += New-JournalItem -ActionType 'Rename' -OriginalPath $entry.Item.FullPath -NewPath $newPath -Result 'Failed' -Message $_.Exception.Message
         }
     }
-    
+
+    if ($journalItems.Count -gt 0) {
+        Add-JournalEntry -Type 'Rename' -Description "Find/replace rename $renamed item(s)" -Items $journalItems -OperationId $operationId
+    }
+
     Write-Log "Renamed $renamed items" 'Info'
     Refresh-Items
 }
@@ -2199,6 +2431,7 @@ function Restore-Backup {
     if ($result -ne 'Yes') { return }
 
     $latestBackup = $backups[0]
+    $operationId = New-OperationId
     $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
     $rollbackRoot = Join-Path $Config.BackupRoot "_restore_rollback\$timestamp"
     $stagingRoot = Join-Path $env:TEMP "StartMenuOrganizer_Restore_$([System.Guid]::NewGuid().ToString('N'))"
@@ -2261,6 +2494,13 @@ function Restore-Backup {
                 Write-Log $restoreResult.Message 'Error'
             }
         }
+
+        $journalItems = @()
+        foreach ($plan in $plans) {
+            $scopeResult = $results | Where-Object { $_.ScopeName -eq $plan.ScopeName } | Select-Object -First 1
+            $journalItems += New-JournalItem -ActionType 'Restore' -OriginalPath $plan.TargetPath -NewPath $plan.TargetPath -BackupPath $plan.RollbackPath -Result $(if ($scopeResult.Success) { 'Success' } else { 'Failed' }) -Message $scopeResult.Message
+        }
+        Add-JournalEntry -Type 'Restore' -Description "Restore backup $($latestBackup.Name)" -Items $journalItems -OperationId $operationId
 
         Write-Log "Pre-restore rollback snapshot preserved: $rollbackRoot" 'Info'
         Refresh-Items
@@ -2597,7 +2837,9 @@ $ctxRename.Add_Click({
         if (-not [string]::IsNullOrEmpty($newName) -and $newName -ne $selected.DisplayName) {
             try {
                 $ext = [System.IO.Path]::GetExtension($selected.FullPath)
-                Rename-Item -Path $selected.FullPath -NewName "$newName$ext" -Force
+                $operationId = New-OperationId
+                $journalItem = Invoke-JournaledRename -SourcePath $selected.FullPath -NewName "$newName$ext" -OperationId $operationId
+                Add-JournalEntry -Type 'Rename' -Description "Rename $($selected.DisplayName)" -Items @($journalItem) -OperationId $operationId
                 Write-Log "Renamed: '$($selected.DisplayName)' -> '$newName'" 'Success'
                 Refresh-Items
             }
@@ -2674,6 +2916,7 @@ $configDir = Split-Path $Config.ConfigFile -Parent
 if (-not (Test-Path $configDir)) {
     New-Item -Path $configDir -ItemType Directory -Force | Out-Null
 }
+Load-UndoJournal
 
 # Populate UI
 Refresh-CategoryUI
@@ -2682,7 +2925,7 @@ Refresh-CategoryPatternsUI
 
 # Initial scan
 Refresh-Items
-Write-Log "Start Menu Organizer Pro initialized" 'Success'
+Write-Log "Start Menu Organizer v$($Config.Version) initialized" 'Success'
 Write-Log "Keyboard shortcuts: Del=Delete, Ctrl+A=Select All, Ctrl+Z=Undo, Ctrl+F=Search, F5=Refresh" 'Info'
 
 # Show window
