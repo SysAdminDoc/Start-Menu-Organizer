@@ -2,7 +2,7 @@
 
 A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, remove duplicates, organize by category, and take full control of your Start Menu.
 
-![Version](https://img.shields.io/badge/Version-v0.2.0-blue)
+![Version](https://img.shields.io/badge/Version-v0.3.0-blue)
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-blue)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6)
 ![License](https://img.shields.io/badge/License-MIT-green)
@@ -178,6 +178,12 @@ Run the persistent undo journal regression test:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\UndoJournal.Tests.ps1
+```
+
+Run the guarded file-operation regression test:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\GuardedFileOperation.Tests.ps1
 ```
 
 ## Troubleshooting

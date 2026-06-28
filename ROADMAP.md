@@ -2,13 +2,6 @@
 
 ## Research-Driven Additions
 
-- [ ] P0 - Centralize guarded file operations
-  Why: Destructive calls are scattered across actions with mixed error handling and wildcard paths.
-  Evidence: `StartMenuOrganizerPro.ps1:1331`, `StartMenuOrganizerPro.ps1:1523`, `StartMenuOrganizerPro.ps1:1651`, `StartMenuOrganizerPro.ps1:1792`, PSScriptAnalyzer `PSUseShouldProcessForStateChangingFunctions`.
-  Touches: `StartMenuOrganizerPro.ps1` delete/move/rename/restore helpers.
-  Acceptance: All filesystem mutations go through one helper using `-LiteralPath`, same-root checks, collision policy, structured results, preview support, and rollback registration.
-  Complexity: L
-
 - [ ] P1 - Replace direct actions with editable transaction plans
   Why: Direct peers make risky shortcut changes safer with dry-run/editable plan artifacts before execution.
   Evidence: windows-shortcut-organizer scan/classify/organize pipeline, ClearWinStart preview/dry-run, current `chkPreviewMode`.

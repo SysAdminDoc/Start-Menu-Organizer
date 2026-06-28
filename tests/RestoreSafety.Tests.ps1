@@ -52,12 +52,18 @@ Assert-Contains 'Restore-Backup must build validated restore plans before applyi
 Assert-Contains 'Restore-Backup must execute the reviewed restore plan.' $restoreBody 'Restore-DirectoryFromPlan'
 Assert-Contains 'Restore-Backup must preserve a pre-restore rollback snapshot.' $restoreBody '_restore_rollback'
 Assert-Contains 'Restore execution must attempt rollback on failure.' $content 'Invoke-RestoreRollback\s+-Plan\s+\$Plan'
-Assert-Contains 'Directory clearing must use literal paths.' $content 'Remove-Item\s+-LiteralPath\s+\$child\.FullName'
+Assert-Contains 'Directory clearing must use the guarded delete helper.' $content 'Invoke-GuardedFileOperation\s+-Action\s+''Delete''\s+-SourcePath\s+\$child\.FullName'
 Assert-Contains 'Restore planning must stage backup sources.' $content 'StagedSource\s*=\s*\$stagedSource'
 Assert-Contains 'Restore planning must persist rollback paths.' $content 'RollbackPath\s*=\s*\$rollbackPath'
 
 $helperFunctions = @(
     'Get-NormalizedPath',
+    'Test-PathWithinRoot',
+    'Get-ApprovedMutationRoot',
+    'Ensure-JournalStorage',
+    'New-OperationId',
+    'New-UndoBackupCopy',
+    'Invoke-GuardedFileOperation',
     'Test-ApprovedRestoreTarget',
     'Copy-DirectoryContents',
     'Clear-DirectoryContents',

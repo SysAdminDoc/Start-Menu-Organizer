@@ -27,7 +27,7 @@
 # ============================================================================
 
 $script:Config = @{
-    Version         = "0.2.0"
+    Version         = "0.3.0"
     UserStartMenu   = [Environment]::GetFolderPath('StartMenu') + '\Programs'
     SystemStartMenu = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs"
     BackupRoot      = "$env:LOCALAPPDATA\StartMenuOrganizerPro\Backups"
@@ -1064,6 +1064,129 @@ function New-UndoBackupCopy {
     return $backupPath
 }
 
+function Test-PathWithinRoot {
+    param(
+        [string]$Path,
+        [string]$Root
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or [string]::IsNullOrWhiteSpace($Root)) {
+        return $false
+    }
+
+    $fullPath = Get-NormalizedPath $Path
+    $rootPath = Get-NormalizedPath $Root
+    if ($fullPath -eq $rootPath) { return $true }
+
+    $rootPrefix = $rootPath + [System.IO.Path]::DirectorySeparatorChar
+    return $fullPath.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Get-ApprovedMutationRoot {
+    param(
+        [string]$Path,
+        [string[]]$AllowedRoots
+    )
+
+    foreach ($root in $AllowedRoots) {
+        if (Test-PathWithinRoot -Path $Path -Root $root) {
+            return (Get-NormalizedPath $root)
+        }
+    }
+
+    return $null
+}
+
+function Invoke-GuardedFileOperation {
+    param(
+        [ValidateSet('Delete','Move','Rename')]
+        [string]$Action,
+        [string]$SourcePath,
+        [string]$DestinationPath = $null,
+        [string]$NewName = $null,
+        [string[]]$AllowedRoots = @($Config.UserStartMenu, $Config.SystemStartMenu),
+        [ValidateSet('Fail','Overwrite')]
+        [string]$CollisionPolicy = 'Fail',
+        [bool]$Preview = $false,
+        [switch]$RegisterRollback,
+        [string]$OperationId = (New-OperationId)
+    )
+
+    $result = [ordered]@{
+        Action = $Action
+        SourcePath = $SourcePath
+        DestinationPath = $DestinationPath
+        BackupPath = $null
+        Result = 'Failed'
+        Preview = $Preview
+        Message = ''
+        Timestamp = (Get-Date).ToString('o')
+    }
+
+    try {
+        $sourceRoot = Get-ApprovedMutationRoot -Path $SourcePath -AllowedRoots $AllowedRoots
+        if (-not $sourceRoot) {
+            throw "Source path is outside approved roots: $SourcePath"
+        }
+
+        if ($Action -eq 'Rename') {
+            if ([string]::IsNullOrWhiteSpace($NewName)) {
+                throw "Rename requires a new name."
+            }
+            $DestinationPath = Join-Path (Split-Path $SourcePath -Parent) $NewName
+            $result.DestinationPath = $DestinationPath
+        }
+
+        if ($Action -in @('Move','Rename')) {
+            if ([string]::IsNullOrWhiteSpace($DestinationPath)) {
+                throw "$Action requires a destination path."
+            }
+
+            $destinationRoot = Get-ApprovedMutationRoot -Path $DestinationPath -AllowedRoots $AllowedRoots
+            if (-not $destinationRoot) {
+                throw "Destination path is outside approved roots: $DestinationPath"
+            }
+            if ($sourceRoot -ne $destinationRoot) {
+                throw "$Action must stay within the same approved root."
+            }
+
+            if ((Test-Path -LiteralPath $DestinationPath) -and ((Get-NormalizedPath $SourcePath) -ne (Get-NormalizedPath $DestinationPath)) -and $CollisionPolicy -eq 'Fail') {
+                throw "Destination already exists: $DestinationPath"
+            }
+        }
+
+        if ($Preview) {
+            $result.Result = 'Preview'
+            $result.Message = 'Preview only; no filesystem change was made.'
+            return [PSCustomObject]$result
+        }
+
+        if ($RegisterRollback) {
+            $result.BackupPath = New-UndoBackupCopy -SourcePath $SourcePath -OperationId $OperationId
+        }
+
+        switch ($Action) {
+            'Delete' {
+                Remove-Item -LiteralPath $SourcePath -Recurse -Force -ErrorAction Stop
+            }
+            'Move' {
+                Move-Item -LiteralPath $SourcePath -Destination $DestinationPath -Force -ErrorAction Stop
+            }
+            'Rename' {
+                Rename-Item -LiteralPath $SourcePath -NewName $NewName -Force -ErrorAction Stop
+            }
+        }
+
+        $result.Result = 'Success'
+        $result.Message = "$Action completed."
+        return [PSCustomObject]$result
+    }
+    catch {
+        $result.Message = $_.Exception.Message
+        return [PSCustomObject]$result
+    }
+}
+
 function New-JournalItem {
     param(
         [string]$ActionType,
@@ -1173,9 +1296,12 @@ function Invoke-JournaledDelete {
         [string]$OperationId
     )
 
-    $backupPath = New-UndoBackupCopy -SourcePath $Path -OperationId $OperationId
-    Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
-    return New-JournalItem -ActionType 'Delete' -OriginalPath $Path -BackupPath $backupPath -Result 'Success'
+    $operation = Invoke-GuardedFileOperation -Action 'Delete' -SourcePath $Path -OperationId $OperationId -RegisterRollback
+    if ($operation.Result -ne 'Success') {
+        throw $operation.Message
+    }
+
+    return New-JournalItem -ActionType 'Delete' -OriginalPath $Path -BackupPath $operation.BackupPath -Result $operation.Result -Message $operation.Message
 }
 
 function Invoke-JournaledMove {
@@ -1185,9 +1311,12 @@ function Invoke-JournaledMove {
         [string]$OperationId
     )
 
-    $backupPath = New-UndoBackupCopy -SourcePath $SourcePath -OperationId $OperationId
-    Move-Item -LiteralPath $SourcePath -Destination $DestinationPath -Force -ErrorAction Stop
-    return New-JournalItem -ActionType 'Move' -OriginalPath $SourcePath -NewPath $DestinationPath -BackupPath $backupPath -Result 'Success'
+    $operation = Invoke-GuardedFileOperation -Action 'Move' -SourcePath $SourcePath -DestinationPath $DestinationPath -OperationId $OperationId -RegisterRollback
+    if ($operation.Result -ne 'Success') {
+        throw $operation.Message
+    }
+
+    return New-JournalItem -ActionType 'Move' -OriginalPath $SourcePath -NewPath $DestinationPath -BackupPath $operation.BackupPath -Result $operation.Result -Message $operation.Message
 }
 
 function Invoke-JournaledRename {
@@ -1197,10 +1326,13 @@ function Invoke-JournaledRename {
         [string]$OperationId
     )
 
-    $backupPath = New-UndoBackupCopy -SourcePath $SourcePath -OperationId $OperationId
     $newPath = Join-Path (Split-Path $SourcePath -Parent) $NewName
-    Rename-Item -LiteralPath $SourcePath -NewName $NewName -Force -ErrorAction Stop
-    return New-JournalItem -ActionType 'Rename' -OriginalPath $SourcePath -NewPath $newPath -BackupPath $backupPath -Result 'Success'
+    $operation = Invoke-GuardedFileOperation -Action 'Rename' -SourcePath $SourcePath -NewName $NewName -OperationId $OperationId -RegisterRollback
+    if ($operation.Result -ne 'Success') {
+        throw $operation.Message
+    }
+
+    return New-JournalItem -ActionType 'Rename' -OriginalPath $SourcePath -NewPath $newPath -BackupPath $operation.BackupPath -Result $operation.Result -Message $operation.Message
 }
 
 function Restore-JournalBackup {
@@ -1238,11 +1370,8 @@ function Invoke-Undo {
                 }
                 'Move' {
                     if ($item.NewPath -and (Test-Path -LiteralPath $item.NewPath)) {
-                        $destDir = Split-Path $item.OriginalPath -Parent
-                        if (-not (Test-Path -LiteralPath $destDir)) {
-                            [System.IO.Directory]::CreateDirectory($destDir) | Out-Null
-                        }
-                        Move-Item -LiteralPath $item.NewPath -Destination $item.OriginalPath -Force -ErrorAction Stop
+                        $operation = Invoke-GuardedFileOperation -Action 'Move' -SourcePath $item.NewPath -DestinationPath $item.OriginalPath -CollisionPolicy 'Overwrite'
+                        if ($operation.Result -ne 'Success') { throw $operation.Message }
                     }
                     else {
                         Restore-JournalBackup -Item $item | Out-Null
@@ -1250,11 +1379,8 @@ function Invoke-Undo {
                 }
                 'Rename' {
                     if ($item.NewPath -and (Test-Path -LiteralPath $item.NewPath)) {
-                        $destDir = Split-Path $item.OriginalPath -Parent
-                        if (-not (Test-Path -LiteralPath $destDir)) {
-                            [System.IO.Directory]::CreateDirectory($destDir) | Out-Null
-                        }
-                        Move-Item -LiteralPath $item.NewPath -Destination $item.OriginalPath -Force -ErrorAction Stop
+                        $operation = Invoke-GuardedFileOperation -Action 'Move' -SourcePath $item.NewPath -DestinationPath $item.OriginalPath -CollisionPolicy 'Overwrite'
+                        if ($operation.Result -ne 'Success') { throw $operation.Message }
                     }
                     else {
                         Restore-JournalBackup -Item $item | Out-Null
@@ -2312,7 +2438,10 @@ function Clear-DirectoryContents {
 
     $children = @(Get-ChildItem -LiteralPath $Path -Force -ErrorAction Stop)
     foreach ($child in $children) {
-        Remove-Item -LiteralPath $child.FullName -Recurse -Force -ErrorAction Stop
+        $operation = Invoke-GuardedFileOperation -Action 'Delete' -SourcePath $child.FullName
+        if ($operation.Result -ne 'Success') {
+            throw $operation.Message
+        }
     }
 }
 

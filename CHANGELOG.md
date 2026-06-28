@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.0 - 2026-06-28
+
+- Centralized destructive delete, move, and rename operations behind one guarded file-operation helper.
+- Added literal-path mutation, approved-root validation, same-root move enforcement, collision failure policy, preview results, structured operation results, and rollback backup registration.
+- Routed journaled actions, undo moves/renames, and restore directory clearing through the guarded helper.
+- Added guarded file-operation regression coverage for preview, cross-root rejection, collision handling, and rollback backups.
+
 ## v0.2.0 - 2026-06-28
 
 - Added a persistent JSON undo journal with durable undo backups under `%LOCALAPPDATA%\StartMenuOrganizerPro`.

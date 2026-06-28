@@ -13,9 +13,13 @@ if ($parseErrors.Count -gt 0) {
 }
 
 $helperFunctions = @(
+    'Get-NormalizedPath',
+    'Test-PathWithinRoot',
+    'Get-ApprovedMutationRoot',
     'Ensure-JournalStorage',
     'New-OperationId',
     'New-UndoBackupCopy',
+    'Invoke-GuardedFileOperation',
     'New-JournalItem',
     'Save-UndoJournal',
     'Load-UndoJournal',
@@ -71,7 +75,7 @@ try {
         UndoFile = Join-Path $undoRoot 'undo.json'
         UndoBackupRoot = Join-Path $undoRoot 'UndoBackups'
         MaxUndoSteps = 50
-        UserStartMenu = Join-Path $testRoot 'user-start'
+        UserStartMenu = $liveRoot
         SystemStartMenu = Join-Path $testRoot 'system-start'
     }
 
