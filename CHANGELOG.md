@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.6.0 - 2026-06-28
+
+- Moved reviewed operation-plan execution into a cancelable dispatcher worker with progress updates.
+- Added partial-journal finalization when a running plan is canceled.
+- Kept synchronous plan execution available for the local regression harness.
+
 ## v0.5.0 - 2026-06-28
 
 - Moved Start Menu scanning into a cancelable PowerShell runspace worker.

@@ -31,6 +31,8 @@ $helperFunctions = @(
     'Update-PlanStatus',
     'Show-OperationPlanSummary',
     'Clear-OperationPlan',
+    'Invoke-OperationPlanSynchronously',
+    'Start-OperationPlanWorker',
     'Invoke-CurrentOperationPlan'
 )
 
@@ -78,6 +80,7 @@ $btnExecutePlan = [PSCustomObject]@{ IsEnabled = $false }
 $btnClearPlan = [PSCustomObject]@{ IsEnabled = $false }
 $script:UndoStack = [System.Collections.Generic.List[PSObject]]::new()
 $script:CurrentOperationPlan = $null
+$script:UseSynchronousPlanExecution = $true
 
 $testRoot = Join-Path $env:TEMP "StartMenuOrganizerPlan_$([System.Guid]::NewGuid().ToString('N'))"
 try {

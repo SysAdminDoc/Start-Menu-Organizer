@@ -2,13 +2,6 @@
 
 ## Research-Driven Additions
 
-- [ ] P1 - Move scan and bulk actions off the UI thread
-  Why: Recursive scans and bulk moves/deletes run from WPF event handlers and can freeze the window on large menus.
-  Evidence: `StartMenuOrganizerPro.ps1:1106`, `StartMenuOrganizerPro.ps1:2254` through `StartMenuOrganizerPro.ps1:2265`, PowerShell stack async GUI convention.
-  Touches: scan/action dispatch, progress/status updates, cancellation handling.
-  Acceptance: Scan and bulk actions run in a background worker/runspace, keep the UI responsive, support cancel, and marshal progress/log updates through the dispatcher.
-  Complexity: L
-
 - [ ] P1 - Add protected folders and richer shortcut validation
   Why: Competitors preserve system folders and validate more than `.exe` targets; current broken-link detection misses folders, documents, app references, and URL shortcuts.
   Evidence: `StartMenuOrganizerPro.ps1:984`, ClearWinStart preserved folders, Microsoft Shell Links docs.

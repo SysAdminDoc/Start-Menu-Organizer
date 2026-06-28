@@ -27,7 +27,7 @@
 # ============================================================================
 
 $script:Config = @{
-    Version         = "0.5.0"
+    Version         = "0.6.0"
     UserStartMenu   = [Environment]::GetFolderPath('StartMenu') + '\Programs'
     SystemStartMenu = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs"
     BackupRoot      = "$env:LOCALAPPDATA\StartMenuOrganizerPro\Backups"
@@ -1073,13 +1073,20 @@ function Stop-BackgroundWorker {
     $worker.Timer.Stop()
 
     try {
-        $worker.PowerShell.Stop()
+        if ($worker.PowerShell) {
+            $worker.PowerShell.Stop()
+        }
+        if ($worker.PSObject.Properties.Name -contains 'OnCanceled' -and $worker.OnCanceled) {
+            & $worker.OnCanceled
+        }
     }
     catch {
         Write-Log "Failed to stop $($worker.Name): $($_.Exception.Message)" 'Error'
     }
     finally {
-        $worker.PowerShell.Dispose()
+        if ($worker.PowerShell) {
+            $worker.PowerShell.Dispose()
+        }
         Set-WorkerUiState -IsBusy $false
         Show-Progress -Visible $false
         Write-Log "$($worker.Name) canceled." 'Warning'
@@ -1673,27 +1680,21 @@ function Clear-OperationPlan {
     Write-Log "Operation plan cleared." 'Info'
 }
 
-function Invoke-CurrentOperationPlan {
-    if (-not $script:CurrentOperationPlan) {
-        [System.Windows.MessageBox]::Show("No operation plan is loaded.", "Info", "OK", "Information")
-        return
-    }
+function Invoke-OperationPlanSynchronously {
+    param(
+        [array]$Operations,
+        [string]$PlanName,
+        [string]$OperationId = (New-OperationId)
+    )
 
-    $operations = @($script:CurrentOperationPlan.Operations)
-    if ($operations.Count -eq 0) {
-        [System.Windows.MessageBox]::Show("The operation plan is empty.", "Info", "OK", "Information")
-        return
-    }
-
-    $operationId = New-OperationId
     $journalItems = @()
     $succeeded = 0
     $failed = 0
 
-    Show-Progress -Value 0 -Maximum $operations.Count
-    for ($i = 0; $i -lt $operations.Count; $i++) {
-        $operation = $operations[$i]
-        Show-Progress -Value ($i + 1) -Maximum $operations.Count
+    Show-Progress -Value 0 -Maximum $Operations.Count
+    for ($i = 0; $i -lt $Operations.Count; $i++) {
+        $operation = $Operations[$i]
+        Show-Progress -Value ($i + 1) -Maximum $Operations.Count
 
         try {
             switch ($operation.Action) {
@@ -1717,13 +1718,122 @@ function Invoke-CurrentOperationPlan {
     }
 
     if ($journalItems.Count -gt 0) {
-        Add-JournalEntry -Type 'Plan' -Description "Execute plan: $($script:CurrentOperationPlan.Name)" -Items $journalItems -OperationId $operationId
+        Add-JournalEntry -Type 'Plan' -Description "Execute plan: $PlanName" -Items $journalItems -OperationId $OperationId
     }
 
     Show-Progress -Visible $false
     Write-Log "Operation plan executed: $succeeded succeeded, $failed failed" 'Info'
-    Clear-OperationPlan
-    Refresh-Items
+
+    return [PSCustomObject]@{
+        Succeeded = $succeeded
+        Failed = $failed
+        JournalItems = $journalItems
+    }
+}
+
+function Start-OperationPlanWorker {
+    param(
+        [array]$Operations,
+        [string]$PlanName
+    )
+
+    if ($script:ActiveWorker) {
+        Write-Log "Worker already running: $($script:ActiveWorker.Name)" 'Warning'
+        return
+    }
+
+    $operationId = New-OperationId
+    $state = [PSCustomObject]@{
+        Index = 0
+        Operations = $Operations
+        PlanName = $PlanName
+        OperationId = $operationId
+        JournalItems = @()
+        Succeeded = 0
+        Failed = 0
+    }
+
+    $timer = [System.Windows.Threading.DispatcherTimer]::new()
+    $timer.Interval = [TimeSpan]::FromMilliseconds(25)
+
+    $finalize = {
+        if ($state.JournalItems.Count -gt 0) {
+            Add-JournalEntry -Type 'Plan' -Description "Execute plan: $($state.PlanName)" -Items $state.JournalItems -OperationId $state.OperationId
+        }
+        Write-Log "Operation plan executed: $($state.Succeeded) succeeded, $($state.Failed) failed" 'Info'
+        Clear-OperationPlan
+        Refresh-Items
+    }
+
+    $timer.Add_Tick({
+        if (-not $script:ActiveWorker) { return }
+
+        if ($state.Index -ge $state.Operations.Count) {
+            $script:ActiveWorker = $null
+            $timer.Stop()
+            & $finalize
+            Set-WorkerUiState -IsBusy $false
+            Show-Progress -Visible $false
+            return
+        }
+
+        $operation = $state.Operations[$state.Index]
+        $state.Index++
+        Show-Progress -Value $state.Index -Maximum $state.Operations.Count
+
+        try {
+            switch ($operation.Action) {
+                'Delete' {
+                    $state.JournalItems += Invoke-JournaledDelete -Path $operation.SourcePath -OperationId $state.OperationId
+                }
+                'Move' {
+                    $state.JournalItems += Invoke-JournaledMove -SourcePath $operation.SourcePath -DestinationPath $operation.DestinationPath -OperationId $state.OperationId
+                }
+                'Rename' {
+                    $state.JournalItems += Invoke-JournaledRename -SourcePath $operation.SourcePath -NewName $operation.NewName -OperationId $state.OperationId
+                }
+            }
+            $state.Succeeded++
+        }
+        catch {
+            $state.Failed++
+            $state.JournalItems += New-JournalItem -ActionType $operation.Action -OriginalPath $operation.SourcePath -NewPath $operation.DestinationPath -Result 'Failed' -Message $_.Exception.Message
+            Write-Log "Plan operation failed: $($operation.Action) $($operation.SourcePath) - $($_.Exception.Message)" 'Error'
+        }
+    })
+
+    $script:ActiveWorker = [PSCustomObject]@{
+        Name = "Executing operation plan..."
+        Timer = $timer
+        PowerShell = $null
+        OnCanceled = $finalize
+    }
+
+    Show-Progress -Value 0 -Maximum $Operations.Count
+    Set-WorkerUiState -IsBusy $true -Message "Executing operation plan..."
+    $timer.Start()
+}
+
+function Invoke-CurrentOperationPlan {
+    if (-not $script:CurrentOperationPlan) {
+        [System.Windows.MessageBox]::Show("No operation plan is loaded.", "Info", "OK", "Information")
+        return
+    }
+
+    $operations = @($script:CurrentOperationPlan.Operations)
+    if ($operations.Count -eq 0) {
+        [System.Windows.MessageBox]::Show("The operation plan is empty.", "Info", "OK", "Information")
+        return
+    }
+
+    if ($script:UseSynchronousPlanExecution) {
+        Invoke-OperationPlanSynchronously -Operations $operations -PlanName $script:CurrentOperationPlan.Name | Out-Null
+        Clear-OperationPlan
+        Refresh-Items
+        return
+    }
+
+    Start-OperationPlanWorker -Operations $operations -PlanName $script:CurrentOperationPlan.Name
 }
 
 function Refresh-Items {
