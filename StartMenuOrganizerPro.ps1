@@ -27,6 +27,7 @@
 # ============================================================================
 
 $script:Config = @{
+    Version         = "0.1.0"
     UserStartMenu   = [Environment]::GetFolderPath('StartMenu') + '\Programs'
     SystemStartMenu = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs"
     BackupRoot      = "$env:LOCALAPPDATA\StartMenuOrganizerPro\Backups"
@@ -105,7 +106,7 @@ $script:WScriptShell = New-Object -ComObject WScript.Shell
 <Window
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="Start Menu Organizer Pro"
+    Title="Start Menu Organizer v$($Config.Version)"
     Width="1400" Height="900"
     MinWidth="1200" MinHeight="700"
     WindowStartupLocation="CenterScreen"
@@ -1254,27 +1255,40 @@ function Get-SelectedItems {
 function Create-Backup {
     $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
     $backupPath = Join-Path $Config.BackupRoot $timestamp
-    
-    if (-not (Test-Path $Config.BackupRoot)) {
-        New-Item -Path $Config.BackupRoot -ItemType Directory -Force | Out-Null
+
+    if (-not (Test-Path -LiteralPath $Config.BackupRoot)) {
+        [System.IO.Directory]::CreateDirectory($Config.BackupRoot) | Out-Null
     }
-    
-    New-Item -Path $backupPath -ItemType Directory -Force | Out-Null
-    
+
+    [System.IO.Directory]::CreateDirectory($backupPath) | Out-Null
+
     $paths = Get-StartMenuPaths
     $i = 0
+    $failed = @()
     foreach ($path in $paths) {
-        if (Test-Path $path) {
+        if (Test-Path -LiteralPath $path) {
             $destName = if ($path -eq $Config.SystemStartMenu) { "System" } else { "User" }
             $destPath = Join-Path $backupPath $destName
             Show-Progress -Value ($i++ * 50) -Maximum 100
-            Copy-Item -Path $path -Destination $destPath -Recurse -Force -ErrorAction SilentlyContinue
+            try {
+                Copy-Item -LiteralPath $path -Destination $destPath -Recurse -Force -ErrorAction Stop
+            }
+            catch {
+                $failed += "$destName`: $($_.Exception.Message)"
+                Write-Log "Backup failed for $destName Start Menu: $($_.Exception.Message)" 'Error'
+            }
         }
     }
-    
+
     Show-Progress -Visible $false
-    Write-Log "Backup created: $backupPath" 'Success'
-    [System.Windows.MessageBox]::Show("Backup created successfully!`n`n$backupPath", "Backup Complete", "OK", "Information")
+    if ($failed.Count -gt 0) {
+        Write-Log "Backup completed with $($failed.Count) failure(s): $backupPath" 'Warning'
+        [System.Windows.MessageBox]::Show("Backup completed with warnings.`n`n$backupPath`n`n$($failed -join "`n")", "Backup Warning", "OK", "Warning")
+    }
+    else {
+        Write-Log "Backup created: $backupPath" 'Success'
+        [System.Windows.MessageBox]::Show("Backup created successfully!`n`n$backupPath", "Backup Complete", "OK", "Information")
+    }
     return $backupPath
 }
 
@@ -2013,56 +2027,262 @@ function Find-Replace-Names {
     Refresh-Items
 }
 
+function Get-NormalizedPath {
+    param([string]$Path)
+    return ([System.IO.Path]::GetFullPath($Path)).TrimEnd('\', '/')
+}
+
+function Test-ApprovedRestoreTarget {
+    param([string]$Path)
+
+    $candidate = Get-NormalizedPath $Path
+    $allowedTargets = @(
+        (Get-NormalizedPath $Config.UserStartMenu),
+        (Get-NormalizedPath $Config.SystemStartMenu)
+    )
+
+    return $allowedTargets -contains $candidate
+}
+
+function Copy-DirectoryContents {
+    param(
+        [string]$SourcePath,
+        [string]$DestinationPath
+    )
+
+    if (-not (Test-Path -LiteralPath $SourcePath -PathType Container)) {
+        throw "Source folder does not exist: $SourcePath"
+    }
+
+    if (-not (Test-Path -LiteralPath $DestinationPath -PathType Container)) {
+        [System.IO.Directory]::CreateDirectory($DestinationPath) | Out-Null
+    }
+
+    $children = @(Get-ChildItem -LiteralPath $SourcePath -Force -ErrorAction Stop)
+    foreach ($child in $children) {
+        Copy-Item -LiteralPath $child.FullName -Destination $DestinationPath -Recurse -Force -ErrorAction Stop
+    }
+
+    return $children.Count
+}
+
+function Clear-DirectoryContents {
+    param([string]$Path)
+
+    if (-not (Test-ApprovedRestoreTarget $Path)) {
+        throw "Refusing to clear unapproved restore target: $Path"
+    }
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+        [System.IO.Directory]::CreateDirectory($Path) | Out-Null
+        return
+    }
+
+    $children = @(Get-ChildItem -LiteralPath $Path -Force -ErrorAction Stop)
+    foreach ($child in $children) {
+        Remove-Item -LiteralPath $child.FullName -Recurse -Force -ErrorAction Stop
+    }
+}
+
+function New-RestorePlan {
+    param(
+        [string]$ScopeName,
+        [string]$BackupPath,
+        [string]$TargetPath,
+        [string]$StagingRoot,
+        [string]$RollbackRoot
+    )
+
+    if (-not (Test-Path -LiteralPath $BackupPath -PathType Container)) {
+        throw "$ScopeName backup folder does not exist: $BackupPath"
+    }
+
+    if (-not (Test-ApprovedRestoreTarget $TargetPath)) {
+        throw "$ScopeName target is not an approved Start Menu path: $TargetPath"
+    }
+
+    $stagedSource = Join-Path $StagingRoot $ScopeName
+    $rollbackPath = Join-Path $RollbackRoot $ScopeName
+
+    Copy-Item -LiteralPath $BackupPath -Destination $stagedSource -Recurse -Force -ErrorAction Stop
+    if (-not (Test-Path -LiteralPath $stagedSource -PathType Container)) {
+        throw "$ScopeName backup could not be staged for validation."
+    }
+
+    if (Test-Path -LiteralPath $TargetPath -PathType Container) {
+        Copy-Item -LiteralPath $TargetPath -Destination $rollbackPath -Recurse -Force -ErrorAction Stop
+    }
+    else {
+        [System.IO.Directory]::CreateDirectory($rollbackPath) | Out-Null
+    }
+
+    if (-not (Test-Path -LiteralPath $rollbackPath -PathType Container)) {
+        throw "$ScopeName rollback snapshot could not be created."
+    }
+
+    Get-ChildItem -LiteralPath $stagedSource -Force -ErrorAction Stop | Out-Null
+    Get-ChildItem -LiteralPath $rollbackPath -Force -ErrorAction Stop | Out-Null
+
+    return [PSCustomObject]@{
+        ScopeName    = $ScopeName
+        BackupPath   = $BackupPath
+        StagedSource = $stagedSource
+        RollbackPath = $rollbackPath
+        TargetPath   = $TargetPath
+    }
+}
+
+function Invoke-RestoreRollback {
+    param($Plan)
+
+    Clear-DirectoryContents -Path $Plan.TargetPath
+    Copy-DirectoryContents -SourcePath $Plan.RollbackPath -DestinationPath $Plan.TargetPath | Out-Null
+}
+
+function Restore-DirectoryFromPlan {
+    param($Plan)
+
+    try {
+        Clear-DirectoryContents -Path $Plan.TargetPath
+        $restoredCount = Copy-DirectoryContents -SourcePath $Plan.StagedSource -DestinationPath $Plan.TargetPath
+        return [PSCustomObject]@{
+            ScopeName          = $Plan.ScopeName
+            Success            = $true
+            RollbackSucceeded  = $null
+            Message            = "$($Plan.ScopeName) Start Menu restored ($restoredCount root item(s))."
+        }
+    }
+    catch {
+        $restoreError = $_.Exception.Message
+        Write-Log "$($Plan.ScopeName) restore failed; attempting rollback: $restoreError" 'Error'
+
+        try {
+            Invoke-RestoreRollback -Plan $Plan
+            return [PSCustomObject]@{
+                ScopeName          = $Plan.ScopeName
+                Success            = $false
+                RollbackSucceeded  = $true
+                Message            = "$($Plan.ScopeName) restore failed and was rolled back: $restoreError"
+            }
+        }
+        catch {
+            return [PSCustomObject]@{
+                ScopeName          = $Plan.ScopeName
+                Success            = $false
+                RollbackSucceeded  = $false
+                Message            = "$($Plan.ScopeName) restore failed, then rollback failed: $restoreError; rollback error: $($_.Exception.Message)"
+            }
+        }
+    }
+}
+
 function Restore-Backup {
-    if (-not (Test-Path $Config.BackupRoot)) {
+    if (-not (Test-Path -LiteralPath $Config.BackupRoot)) {
         [System.Windows.MessageBox]::Show("No backups found.", "Info", "OK", "Information")
         return
     }
-    
-    $backups = Get-ChildItem -Path $Config.BackupRoot -Directory | Sort-Object Name -Descending
+
+    $backups = Get-ChildItem -LiteralPath $Config.BackupRoot -Directory |
+        Where-Object { $_.Name -match '^\d{8}_\d{6}$' } |
+        Sort-Object Name -Descending
+
     if ($backups.Count -eq 0) {
         [System.Windows.MessageBox]::Show("No backups found.", "Info", "OK", "Information")
         return
     }
-    
-    # Show selection dialog
-    $backupList = $backups | ForEach-Object { 
-        $date = [DateTime]::ParseExact($_.Name, 'yyyyMMdd_HHmmss', $null)
-        "$($date.ToString('yyyy-MM-dd HH:mm:ss')) - $($_.Name)"
-    }
-    
+
     $result = [System.Windows.MessageBox]::Show(
         "Restore from latest backup?`n`n$($backups[0].Name)`n`nThis will replace current Start Menu contents!",
         "Confirm Restore", "YesNo", "Warning"
     )
-    
+
     if ($result -ne 'Yes') { return }
-    
+
     $latestBackup = $backups[0]
-    
+    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+    $rollbackRoot = Join-Path $Config.BackupRoot "_restore_rollback\$timestamp"
+    $stagingRoot = Join-Path $env:TEMP "StartMenuOrganizer_Restore_$([System.Guid]::NewGuid().ToString('N'))"
+
     try {
+        [System.IO.Directory]::CreateDirectory($rollbackRoot) | Out-Null
+        [System.IO.Directory]::CreateDirectory($stagingRoot) | Out-Null
+
         $userBackup = Join-Path $latestBackup.FullName "User"
         $systemBackup = Join-Path $latestBackup.FullName "System"
-        
-        if (Test-Path $userBackup) {
-            Remove-Item -Path "$($Config.UserStartMenu)\*" -Recurse -Force -ErrorAction SilentlyContinue
-            Copy-Item -Path "$userBackup\*" -Destination $Config.UserStartMenu -Recurse -Force
-            Write-Log "Restored user Start Menu" 'Success'
+
+        $plans = @()
+        $skipped = @()
+        $planFailures = @()
+
+        if (Test-Path -LiteralPath $userBackup) {
+            try {
+                $plans += New-RestorePlan -ScopeName "User" -BackupPath $userBackup -TargetPath $Config.UserStartMenu -StagingRoot $stagingRoot -RollbackRoot $rollbackRoot
+                Write-Log "Prepared User Start Menu restore with rollback snapshot." 'Info'
+            }
+            catch {
+                $planFailures += "User: $($_.Exception.Message)"
+                Write-Log "User restore preparation failed: $($_.Exception.Message)" 'Error'
+            }
         }
-        
-        if ((Test-Path $systemBackup) -and $script:IsAdmin) {
-            Remove-Item -Path "$($Config.SystemStartMenu)\*" -Recurse -Force -ErrorAction SilentlyContinue
-            Copy-Item -Path "$systemBackup\*" -Destination $Config.SystemStartMenu -Recurse -Force
-            Write-Log "Restored system Start Menu" 'Success'
+        else {
+            $skipped += "User backup folder was not present in $($latestBackup.Name)."
         }
-        
-        Write-Log "Restore complete!" 'Success'
+
+        if (Test-Path -LiteralPath $systemBackup) {
+            if ($script:IsAdmin) {
+                try {
+                    $plans += New-RestorePlan -ScopeName "System" -BackupPath $systemBackup -TargetPath $Config.SystemStartMenu -StagingRoot $stagingRoot -RollbackRoot $rollbackRoot
+                    Write-Log "Prepared System Start Menu restore with rollback snapshot." 'Info'
+                }
+                catch {
+                    $planFailures += "System: $($_.Exception.Message)"
+                    Write-Log "System restore preparation failed: $($_.Exception.Message)" 'Error'
+                }
+            }
+            else {
+                $skipped += "System Start Menu skipped; run as Administrator to restore it."
+                Write-Log "Skipped System Start Menu restore because the app is not elevated." 'Warning'
+            }
+        }
+
+        if ($plans.Count -eq 0) {
+            $messages = @($planFailures + $skipped)
+            throw "No restore targets were prepared. $($messages -join ' ')"
+        }
+
+        $results = @()
+        foreach ($plan in $plans) {
+            $restoreResult = Restore-DirectoryFromPlan -Plan $plan
+            $results += $restoreResult
+            if ($restoreResult.Success) {
+                Write-Log $restoreResult.Message 'Success'
+            }
+            else {
+                Write-Log $restoreResult.Message 'Error'
+            }
+        }
+
+        Write-Log "Pre-restore rollback snapshot preserved: $rollbackRoot" 'Info'
         Refresh-Items
-        [System.Windows.MessageBox]::Show("Restore complete!", "Success", "OK", "Information")
+
+        $failedResults = @($results | Where-Object { -not $_.Success })
+        if ($failedResults.Count -gt 0 -or $planFailures.Count -gt 0 -or $skipped.Count -gt 0) {
+            $details = @($failedResults.Message + $planFailures + $skipped)
+            [System.Windows.MessageBox]::Show("Restore completed with warnings.`n`n$($details -join "`n")`n`nRollback snapshot:`n$rollbackRoot", "Restore Warning", "OK", "Warning")
+        }
+        else {
+            Write-Log "Restore complete." 'Success'
+            [System.Windows.MessageBox]::Show("Restore complete.`n`nRollback snapshot:`n$rollbackRoot", "Success", "OK", "Information")
+        }
     }
     catch {
         Write-Log "Restore failed: $_" 'Error'
         [System.Windows.MessageBox]::Show("Restore failed: $_", "Error", "OK", "Error")
+    }
+    finally {
+        if (Test-Path -LiteralPath $stagingRoot) {
+            Remove-Item -LiteralPath $stagingRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 

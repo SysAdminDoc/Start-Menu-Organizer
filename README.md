@@ -2,6 +2,7 @@
 
 A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, remove duplicates, organize by category, and take full control of your Start Menu.
 
+![Version](https://img.shields.io/badge/Version-v0.1.0-blue)
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-blue)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6)
 ![License](https://img.shields.io/badge/License-MIT-green)
@@ -47,6 +48,7 @@ A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, re
 ### Safety Features
 - **Undo Support** (Ctrl+Z) - Recover from accidental deletions
 - **Backup/Restore** - Create timestamped backups before making changes
+- **Fail-Closed Restore** - Validates backup contents in staging and preserves a pre-restore rollback snapshot before replacing live entries
 - **Preview Mode** - Dry-run any operation first
 - **Confirmation Dialogs** - No destructive action without explicit approval
 
@@ -159,7 +161,16 @@ Save your customized patterns:
 | Item | Location |
 |------|----------|
 | Backups | `%LOCALAPPDATA%\StartMenuOrganizerPro\Backups` |
+| Restore rollback snapshots | `%LOCALAPPDATA%\StartMenuOrganizerPro\Backups\_restore_rollback` |
 | Config | `%LOCALAPPDATA%\StartMenuOrganizerPro\config.json` |
+
+## Development
+
+Run the local restore safety regression test:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\RestoreSafety.Tests.ps1
+```
 
 ## Troubleshooting
 

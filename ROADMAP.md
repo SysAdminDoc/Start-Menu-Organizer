@@ -2,13 +2,6 @@
 
 ## Research-Driven Additions
 
-- [ ] P0 - Make restore fail-closed and reversible
-  Why: Restore currently deletes live Start Menu contents before copying backup files, so a partial failure can leave the menu empty.
-  Evidence: `StartMenuOrganizerPro.ps1:2048`, `StartMenuOrganizerPro.ps1:2054`, Start Menu Helper backup warning.
-  Touches: `StartMenuOrganizerPro.ps1` restore/backup functions and shared file-operation helpers.
-  Acceptance: Restore stages backup contents, validates sources, preserves a pre-restore rollback snapshot, reports partial failures, and never deletes live entries until rollback is available.
-  Complexity: M
-
 - [ ] P0 - Add persistent undo and operation journal
   Why: `$Config.UndoFile` exists but undo is only in memory and deletion recovery uses temp files that may disappear after exit.
   Evidence: `StartMenuOrganizerPro.ps1:34`, `StartMenuOrganizerPro.ps1:80`, `StartMenuOrganizerPro.ps1:1306`, ClearWinStart logging model.
