@@ -2,7 +2,7 @@
 
 A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, remove duplicates, organize by category, and take full control of your Start Menu.
 
-![Version](https://img.shields.io/badge/Version-v0.4.0-blue)
+![Version](https://img.shields.io/badge/Version-v0.5.0-blue)
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-blue)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6)
 ![License](https://img.shields.io/badge/License-MIT-green)
@@ -38,6 +38,7 @@ A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, re
 
 ### User Interface
 - **DataGrid View** with sortable columns: Name, Type, Status, Location, Target
+- **Background Scanning** - Start Menu scans run in a cancelable worker so the window stays responsive
 - **Search/Filter** (Ctrl+F) - Filter by name, path, or target in real-time
 - **Filter Toggles** - Show/hide Shortcuts, Folders, Junk, Broken, Duplicates
 - **Sort Options** - Sort by Name, Type, Status, Location, or Target
@@ -191,6 +192,12 @@ Run the editable operation-plan regression test:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\OperationPlan.Tests.ps1
+```
+
+Run the async scan wiring regression test:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\AsyncScan.Tests.ps1
 ```
 
 ## Troubleshooting

@@ -27,7 +27,7 @@
 # ============================================================================
 
 $script:Config = @{
-    Version         = "0.4.0"
+    Version         = "0.5.0"
     UserStartMenu   = [Environment]::GetFolderPath('StartMenu') + '\Programs'
     SystemStartMenu = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs"
     BackupRoot      = "$env:LOCALAPPDATA\StartMenuOrganizerPro\Backups"
@@ -567,7 +567,9 @@ $script:WScriptShell = New-Object -ComObject WScript.Shell
                 
                 <!-- Quick Actions -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal">
-                    <Button x:Name="btnUndo" Content="Undo" Style="{StaticResource SecondaryButton}" 
+                    <Button x:Name="btnCancelWork" Content="Cancel" Style="{StaticResource DangerButton}"
+                            Margin="0,0,8,0" IsEnabled="False"/>
+                    <Button x:Name="btnUndo" Content="Undo" Style="{StaticResource SecondaryButton}"
                             Margin="0,0,8,0" IsEnabled="False" ToolTip="Ctrl+Z"/>
                     <Button x:Name="btnBackup" Content="Backup" Style="{StaticResource SecondaryButton}" Margin="0,0,8,0"/>
                     <Button x:Name="btnRestore" Content="Restore" Style="{StaticResource SecondaryButton}"/>
@@ -951,6 +953,7 @@ $script:AllItems = [System.Collections.Generic.List[PSObject]]::new()
 $script:FilteredItems = [System.Collections.ObjectModel.ObservableCollection[PSObject]]::new()
 $dgItems.ItemsSource = $script:FilteredItems
 $script:CurrentOperationPlan = $null
+$script:ActiveWorker = $null
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -987,6 +990,100 @@ function Show-Progress {
         $progressBar.Value = $Value
         $progressBar.Visibility = if ($Visible) { 'Visible' } else { 'Collapsed' }
     })
+}
+
+function Set-WorkerUiState {
+    param(
+        [bool]$IsBusy,
+        [string]$Message = 'Ready'
+    )
+
+    $Window.Dispatcher.Invoke([Action]{
+        $btnCancelWork.IsEnabled = $IsBusy
+        $btnRefresh.IsEnabled = -not $IsBusy
+        $txtStatus.Text = $Message
+    })
+}
+
+function Start-BackgroundWorker {
+    param(
+        [string]$Name,
+        [scriptblock]$ScriptBlock,
+        [object[]]$Arguments,
+        [scriptblock]$OnCompleted
+    )
+
+    if ($script:ActiveWorker) {
+        Write-Log "Worker already running: $($script:ActiveWorker.Name)" 'Warning'
+        return $false
+    }
+
+    $powerShell = [PowerShell]::Create()
+    [void]$powerShell.AddScript($ScriptBlock)
+    foreach ($argument in $Arguments) {
+        [void]$powerShell.AddArgument($argument)
+    }
+
+    $asyncResult = $powerShell.BeginInvoke()
+    $timer = [System.Windows.Threading.DispatcherTimer]::new()
+    $timer.Interval = [TimeSpan]::FromMilliseconds(150)
+
+    $worker = [PSCustomObject]@{
+        Name = $Name
+        PowerShell = $powerShell
+        AsyncResult = $asyncResult
+        Timer = $timer
+        OnCompleted = $OnCompleted
+    }
+    $script:ActiveWorker = $worker
+
+    $timer.Add_Tick({
+        if (-not $script:ActiveWorker) { return }
+        if (-not $script:ActiveWorker.AsyncResult.IsCompleted) { return }
+
+        $completedWorker = $script:ActiveWorker
+        $script:ActiveWorker = $null
+        $completedWorker.Timer.Stop()
+
+        try {
+            $output = $completedWorker.PowerShell.EndInvoke($completedWorker.AsyncResult)
+            & $completedWorker.OnCompleted $output
+        }
+        catch {
+            Write-Log "$($completedWorker.Name) failed: $($_.Exception.Message)" 'Error'
+            Update-Status "Ready"
+        }
+        finally {
+            $completedWorker.PowerShell.Dispose()
+            Set-WorkerUiState -IsBusy $false
+            Show-Progress -Visible $false
+        }
+    })
+
+    Set-WorkerUiState -IsBusy $true -Message $Name
+    $timer.Start()
+    return $true
+}
+
+function Stop-BackgroundWorker {
+    if (-not $script:ActiveWorker) { return }
+
+    $worker = $script:ActiveWorker
+    $script:ActiveWorker = $null
+    $worker.Timer.Stop()
+
+    try {
+        $worker.PowerShell.Stop()
+    }
+    catch {
+        Write-Log "Failed to stop $($worker.Name): $($_.Exception.Message)" 'Error'
+    }
+    finally {
+        $worker.PowerShell.Dispose()
+        Set-WorkerUiState -IsBusy $false
+        Show-Progress -Visible $false
+        Write-Log "$($worker.Name) canceled." 'Warning'
+    }
 }
 
 function Get-StartMenuPaths {
@@ -1630,84 +1727,156 @@ function Invoke-CurrentOperationPlan {
 }
 
 function Refresh-Items {
-    $script:AllItems.Clear()
-    $script:FilteredItems.Clear()
-    
-    $paths = Get-StartMenuPaths
-    $allShortcuts = @{}
-    $duplicateTargets = @{}
-    
-    Update-Status "Scanning Start Menu..."
-    
-    # First pass - collect all items and identify duplicates
-    foreach ($basePath in $paths) {
-        if (-not (Test-Path $basePath)) { continue }
-        
-        $isSystem = $basePath -eq $Config.SystemStartMenu
-        $prefix = if ($isSystem) { "[Sys]" } else { "[User]" }
-        
-        Get-ChildItem -Path $basePath -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
-            $relativePath = $_.FullName.Substring($basePath.Length + 1)
-            $isFolder = $_.PSIsContainer
-            $isJunk = Test-IsJunk $_.BaseName
-            $isBroken = $false
-            $targetPath = ''
-            
-            if (-not $isFolder -and $_.Extension -eq '.lnk') {
-                $targetPath = Get-ShortcutTarget $_.FullName
-                $isBroken = Test-ShortcutBroken $_.FullName
-                
-                # Track for duplicate detection
-                if (-not [string]::IsNullOrEmpty($targetPath)) {
-                    if (-not $allShortcuts.ContainsKey($targetPath)) {
-                        $allShortcuts[$targetPath] = @()
+    $paths = @(Get-StartMenuPaths)
+    $junkPatterns = @($script:JunkPatterns)
+    $userStartMenu = $Config.UserStartMenu
+    $systemStartMenu = $Config.SystemStartMenu
+
+    $scanScript = {
+        param(
+            [string[]]$Paths,
+            [string]$UserStartMenu,
+            [string]$SystemStartMenu,
+            [string[]]$JunkPatterns
+        )
+
+        function Get-WorkerShortcutTarget {
+            param(
+                [string]$ShortcutPath,
+                $Shell
+            )
+
+            try {
+                $shortcut = $Shell.CreateShortcut($ShortcutPath)
+                return $shortcut.TargetPath
+            }
+            catch {
+                return $null
+            }
+        }
+
+        function Test-WorkerShortcutBroken {
+            param(
+                [string]$ShortcutPath,
+                $Shell
+            )
+
+            $target = Get-WorkerShortcutTarget -ShortcutPath $ShortcutPath -Shell $Shell
+            if ([string]::IsNullOrEmpty($target)) { return $false }
+            if ($target -match '^[A-Za-z]:\\Windows\\' -or
+                $target -match '^shell:' -or
+                $target -match '\.exe$' -eq $false) {
+                return $false
+            }
+
+            return -not (Test-Path -LiteralPath $target)
+        }
+
+        function Test-WorkerJunk {
+            param([string]$Name)
+            foreach ($pattern in $JunkPatterns) {
+                if ($Name -like $pattern) { return $true }
+            }
+            return $false
+        }
+
+        $items = [System.Collections.Generic.List[object]]::new()
+        $allShortcuts = @{}
+        $shell = New-Object -ComObject WScript.Shell
+
+        try {
+            foreach ($basePath in $Paths) {
+                if (-not (Test-Path -LiteralPath $basePath)) { continue }
+
+                $isSystem = $basePath -eq $SystemStartMenu
+                $prefix = if ($isSystem) { "[Sys]" } else { "[User]" }
+
+                Get-ChildItem -LiteralPath $basePath -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+                    $relativePath = $_.FullName.Substring($basePath.Length + 1)
+                    $isFolder = $_.PSIsContainer
+                    $isJunk = Test-WorkerJunk $_.BaseName
+                    $isBroken = $false
+                    $targetPath = ''
+
+                    if (-not $isFolder -and $_.Extension -eq '.lnk') {
+                        $targetPath = Get-WorkerShortcutTarget -ShortcutPath $_.FullName -Shell $shell
+                        $isBroken = Test-WorkerShortcutBroken -ShortcutPath $_.FullName -Shell $shell
+
+                        if (-not [string]::IsNullOrEmpty($targetPath)) {
+                            if (-not $allShortcuts.ContainsKey($targetPath)) {
+                                $allShortcuts[$targetPath] = @()
+                            }
+                            $allShortcuts[$targetPath] += $_.FullName
+                        }
                     }
-                    $allShortcuts[$targetPath] += $_.FullName
+
+                    $itemType = if ($isFolder) { 'Folder' } elseif ($isJunk) { 'Junk' } else { 'Shortcut' }
+                    $item = [PSCustomObject]@{
+                        IsSelected   = $false
+                        DisplayName  = $_.BaseName
+                        RelativePath = "$prefix $relativePath"
+                        FullPath     = $_.FullName
+                        BasePath     = $basePath
+                        IsFolder     = $isFolder
+                        IsJunk       = $isJunk
+                        IsBroken     = $isBroken
+                        IsDuplicate  = $false
+                        ItemType     = $itemType
+                        TargetPath   = $targetPath
+                        Status       = 'OK'
+                        IsSystem     = $isSystem
+                    }
+                    $items.Add($item)
                 }
             }
-            
-            $itemType = if ($isFolder) { 'Folder' } elseif ($isJunk) { 'Junk' } else { 'Shortcut' }
-            
-            $item = [PSCustomObject]@{
-                IsSelected   = $false
-                DisplayName  = $_.BaseName
-                RelativePath = "$prefix $relativePath"
-                FullPath     = $_.FullName
-                BasePath     = $basePath
-                IsFolder     = $isFolder
-                IsJunk       = $isJunk
-                IsBroken     = $isBroken
-                IsDuplicate  = $false
-                ItemType     = $itemType
-                TargetPath   = $targetPath
-                Status       = 'OK'
-                IsSystem     = $isSystem
+
+            $duplicateTargets = $allShortcuts.GetEnumerator() | Where-Object { $_.Value.Count -gt 1 }
+            foreach ($dup in $duplicateTargets) {
+                foreach ($path in $dup.Value) {
+                    $item = $items | Where-Object { $_.FullPath -eq $path } | Select-Object -First 1
+                    if ($item) {
+                        $item.IsDuplicate = $true
+                        $item.ItemType = 'Duplicate'
+                    }
+                }
             }
-            
+
+            foreach ($item in $items) {
+                $statuses = @()
+                if ($item.IsJunk) { $statuses += 'Junk' }
+                if ($item.IsBroken) { $statuses += 'Broken' }
+                if ($item.IsDuplicate) { $statuses += 'Duplicate' }
+                $item.Status = if ($statuses.Count -eq 0) { 'OK' } else { $statuses -join ', ' }
+            }
+
+            return [PSCustomObject]@{ Items = @($items) }
+        }
+        finally {
+            if ($shell) {
+                [System.Runtime.Interopservices.Marshal]::ReleaseComObject($shell) | Out-Null
+            }
+        }
+    }
+
+    $completed = {
+        param($Output)
+
+        $result = $Output | Select-Object -First 1
+        $script:AllItems.Clear()
+        $script:FilteredItems.Clear()
+
+        foreach ($item in @($result.Items)) {
             $script:AllItems.Add($item)
         }
+
+        Apply-Filters
+        Update-Stats
+        Update-Status "Ready"
+        Write-Log "Scan complete: $($script:AllItems.Count) item(s)" 'Success'
     }
-    
-    # Second pass - mark duplicates
-    $duplicateTargets = $allShortcuts.GetEnumerator() | Where-Object { $_.Value.Count -gt 1 }
-    foreach ($dup in $duplicateTargets) {
-        foreach ($path in $dup.Value) {
-            $item = $script:AllItems | Where-Object { $_.FullPath -eq $path } | Select-Object -First 1
-            if ($item) {
-                $item.IsDuplicate = $true
-                $item.ItemType = 'Duplicate'
-            }
-        }
-    }
-    
-    # Update status for all items
-    foreach ($item in $script:AllItems) {
-        $item.Status = Get-ItemStatus $item
-    }
-    
-    Apply-Filters
-    Update-Stats
-    Update-Status "Ready"
+
+    Show-Progress -Value 0 -Maximum 100
+    Start-BackgroundWorker -Name "Scanning Start Menu..." -ScriptBlock $scanScript -Arguments @($paths, $userStartMenu, $systemStartMenu, $junkPatterns) -OnCompleted $completed | Out-Null
 }
 
 function Apply-Filters {
@@ -3085,6 +3254,7 @@ $txtReplaceText.Add_LostFocus({ if ([string]::IsNullOrEmpty($txtReplaceText.Text
 
 # Refresh and scope
 $btnRefresh.Add_Click({ Refresh-Items })
+$btnCancelWork.Add_Click({ Stop-BackgroundWorker })
 $cmbScope.Add_SelectionChanged({ Refresh-Items })
 $cmbSort.Add_SelectionChanged({ Apply-Filters })
 

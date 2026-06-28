@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.5.0 - 2026-06-28
+
+- Moved Start Menu scanning into a cancelable PowerShell runspace worker.
+- Added dispatcher-marshaled scan completion so item binding, filtering, stats, status, and logs update on the UI thread.
+- Added a header Cancel action for active background work.
+- Added async scan wiring regression coverage.
+
 ## v0.4.0 - 2026-06-28
 
 - Added editable transaction plans generated from Preview Mode for bulk delete, cleanup, move, organize, flatten, and rename actions.
