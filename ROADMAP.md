@@ -2,13 +2,6 @@
 
 ## Research-Driven Additions
 
-- [ ] P2 - Package an installable release artifact
-  Why: Direct peers offer installers or executable builds while this repo only documents raw `.ps1` execution.
-  Evidence: Start Menu Helper setup/Inno workflow, ExplorerPatcher architecture-specific setup, README installation section.
-  Touches: packaging scripts, README release instructions, artifact output.
-  Acceptance: A local build creates a versioned installable artifact with Start Menu shortcut, uninstall path, execution-policy guidance, and documented admin behavior.
-  Complexity: L
-
 - [ ] P2 - Add structured file logging and crash logs
   Why: The in-window log is useful during a session but does not persist diagnostics for failed filesystem changes.
   Evidence: `StartMenuOrganizerPro.ps1:929`, ClearWinStart rotating log model.

@@ -2,7 +2,7 @@
 
 A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, remove duplicates, organize by category, and take full control of your Start Menu.
 
-![Version](https://img.shields.io/badge/Version-v0.9.0-blue)
+![Version](https://img.shields.io/badge/Version-v0.10.0-blue)
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-blue)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6)
 ![License](https://img.shields.io/badge/License-MIT-green)
@@ -66,19 +66,33 @@ A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, re
 
 ## Installation
 
-No installation required. Simply download and run.
+### Option 1: Installable Package
+1. Download `StartMenuOrganizer-v0.10.0.zip` from the release artifacts.
+2. Extract the zip to a local folder.
+3. Install for the current user:
 
-### Option 1: Direct Download
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-StartMenuOrganizer.ps1
+```
+
+The installer copies the app to `%LOCALAPPDATA%\Programs\Start Menu Organizer`, creates a Start Menu shortcut, and installs an uninstaller beside the app.
+
+Uninstall:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\Start Menu Organizer\Uninstall-StartMenuOrganizer.ps1"
+```
+
+### Option 2: Direct Script
 1. Download `StartMenuOrganizerPro.ps1`
-2. Right-click and select "Run with PowerShell"
+2. Run it from PowerShell:
 
-### Option 2: From PowerShell
 ```powershell
 .\StartMenuOrganizerPro.ps1
 ```
 
 ### Running as Administrator
-For full access to both User and System Start Menus, run as Administrator:
+The package installer is per-user and does not require elevation. For full access to both User and System Start Menus, launch Start Menu Organizer as Administrator:
 
 1. Right-click PowerShell → "Run as Administrator"
 2. Navigate to script location and run it
@@ -180,6 +194,12 @@ Run the full local gate:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\Run-Tests.ps1
 ```
 
+Build the release package:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Build-Release.ps1
+```
+
 Run the local restore safety regression test:
 
 ```powershell
@@ -232,7 +252,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\SettingsPersistence.
 - Check filter toggles - some types may be hidden
 
 ### Undo not working
-- Undo only works for deletions made in the current session
+- Undo restores the latest reversible operation from the saved journal
 - For older changes, use "Restore" to recover from a backup
 
 ### Script won't run

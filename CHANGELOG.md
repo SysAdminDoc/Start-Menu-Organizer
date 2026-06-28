@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.10.0 - 2026-06-28
+
+- Added a local release-package builder that creates `StartMenuOrganizer-v0.10.0.zip`.
+- Added current-user install and uninstall scripts with a Start Menu shortcut and execution-policy launch guidance.
+- Added package regression coverage to verify the artifact name, included files, installer shortcut wiring, and uninstall path.
+- Documented installable package usage, uninstall command, and admin behavior for system Start Menu changes.
+
 ## v0.9.0 - 2026-06-28
 
 - Added a unified local test gate that runs parser checks, disposable-fixture regression scripts, Pester, and PSScriptAnalyzer.

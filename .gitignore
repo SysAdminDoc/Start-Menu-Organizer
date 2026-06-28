@@ -7,3 +7,5 @@ AGENTS.md
 .ai/
 PROJECT_CONTEXT.md
 CONTINUATION_PROMPT.md
+dist/
+testResults.xml

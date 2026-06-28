@@ -21,7 +21,8 @@ $plainTests = @(
     'OperationPlan.Tests.ps1',
     'AsyncScan.Tests.ps1',
     'ShortcutValidation.Tests.ps1',
-    'SettingsPersistence.Tests.ps1'
+    'SettingsPersistence.Tests.ps1',
+    'Packaging.Tests.ps1'
 )
 
 foreach ($test in $plainTests) {
