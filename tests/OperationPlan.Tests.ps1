@@ -14,6 +14,7 @@ if ($parseErrors.Count -gt 0) {
 
 $helperFunctions = @(
     'Get-NormalizedPath',
+    'Test-ProtectedFolder',
     'Test-PathWithinRoot',
     'Get-ApprovedMutationRoot',
     'Ensure-JournalStorage',
@@ -99,6 +100,7 @@ try {
         UndoBackupRoot = Join-Path $undoRoot 'UndoBackups'
         MaxUndoSteps = 50
     }
+    $script:ProtectedFolders = @('Startup')
 
     $deletePath = Join-Path $userRoot 'delete.lnk'
     $moveSource = Join-Path $userRoot 'move.lnk'

@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.7.0 - 2026-06-28
+
+- Added built-in protected Start Menu folder detection for folders such as Startup, Windows Tools, Windows PowerShell, and Administrative Tools.
+- Skipped protected items in delete, flatten, empty-folder cleanup, root move, category move, auto-organize, and batch rename paths.
+- Expanded shortcut validation for `.url`, `.appref-ms`, file URLs, documents, folders, environment-variable paths, shell links, and app protocol targets.
+- Added shortcut validation and protected-folder regression coverage.
+
 ## v0.6.0 - 2026-06-28
 
 - Moved reviewed operation-plan execution into a cancelable dispatcher worker with progress updates.

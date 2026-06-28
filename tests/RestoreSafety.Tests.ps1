@@ -58,6 +58,7 @@ Assert-Contains 'Restore planning must persist rollback paths.' $content 'Rollba
 
 $helperFunctions = @(
     'Get-NormalizedPath',
+    'Test-ProtectedFolder',
     'Test-PathWithinRoot',
     'Get-ApprovedMutationRoot',
     'Ensure-JournalStorage',
@@ -114,6 +115,7 @@ try {
         UserStartMenu = $targetPath
         SystemStartMenu = $systemPath
     }
+    $script:ProtectedFolders = @('Startup')
 
     $plan = New-RestorePlan -ScopeName 'User' -BackupPath $backupPath -TargetPath $targetPath -StagingRoot $stagingRoot -RollbackRoot $rollbackRoot
     $result = Restore-DirectoryFromPlan -Plan $plan

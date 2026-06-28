@@ -27,7 +27,7 @@
 # ============================================================================
 
 $script:Config = @{
-    Version         = "0.6.0"
+    Version         = "0.7.0"
     UserStartMenu   = [Environment]::GetFolderPath('StartMenu') + '\Programs'
     SystemStartMenu = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs"
     BackupRoot      = "$env:LOCALAPPDATA\StartMenuOrganizerPro\Backups"
@@ -61,6 +61,18 @@ $script:JunkPatterns = [System.Collections.ObjectModel.ObservableCollection[stri
     '*feedback*'
     '*update*'
     '*check for update*'
+)
+
+$script:ProtectedFolders = [System.Collections.ObjectModel.ObservableCollection[string]]@(
+    'Accessories'
+    'Administrative Tools'
+    'Maintenance'
+    'Startup'
+    'System Tools'
+    'Windows Administrative Tools'
+    'Windows PowerShell'
+    'Windows System'
+    'Windows Tools'
 )
 
 # Default categories
@@ -1105,8 +1117,24 @@ function Get-StartMenuPaths {
 
 function Get-ShortcutTarget {
     param([string]$ShortcutPath)
-    
+
+    $extension = [System.IO.Path]::GetExtension($ShortcutPath).ToLowerInvariant()
+
     try {
+        if ($extension -eq '.url') {
+            $urlLine = Get-Content -LiteralPath $ShortcutPath -ErrorAction Stop |
+                Where-Object { $_ -match '^URL=' } |
+                Select-Object -First 1
+            if ($urlLine) {
+                return ($urlLine -replace '^URL=', '').Trim()
+            }
+            return $null
+        }
+
+        if ($extension -eq '.appref-ms') {
+            return $ShortcutPath
+        }
+
         $shortcut = $script:WScriptShell.CreateShortcut($ShortcutPath)
         return $shortcut.TargetPath
     }
@@ -1117,18 +1145,57 @@ function Get-ShortcutTarget {
 
 function Test-ShortcutBroken {
     param([string]$ShortcutPath)
-    
+
+    if (-not (Test-Path -LiteralPath $ShortcutPath)) { return $true }
+
+    $extension = [System.IO.Path]::GetExtension($ShortcutPath).ToLowerInvariant()
+    if ($extension -eq '.appref-ms') { return $false }
+
     $target = Get-ShortcutTarget $ShortcutPath
     if ([string]::IsNullOrEmpty($target)) { return $false }
-    
-    # Skip UWP apps and special paths
-    if ($target -match '^[A-Za-z]:\\Windows\\' -or 
-        $target -match '^shell:' -or 
-        $target -match '\.exe$' -eq $false) {
+
+    if ($target -match '^(https?|ftp)://') { return $false }
+    if ($target -match '^file://') {
+        $target = ([System.Uri]$target).LocalPath
+    }
+
+    $expandedTarget = [Environment]::ExpandEnvironmentVariables($target)
+
+    # Skip UWP apps, shell links, and Windows-managed targets.
+    if ($expandedTarget -match '^[A-Za-z]:\\Windows\\' -or
+        $expandedTarget -match '^shell:' -or
+        $expandedTarget -match '^ms-[A-Za-z-]+:') {
         return $false
     }
-    
-    return -not (Test-Path $target)
+
+    if ($expandedTarget -match '^[A-Za-z]:\\' -or $expandedTarget.StartsWith('\\')) {
+        return -not (Test-Path -LiteralPath $expandedTarget)
+    }
+
+    return $false
+}
+
+function Test-ProtectedFolder {
+    param(
+        [string]$Path,
+        [string]$BasePath
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or [string]::IsNullOrWhiteSpace($BasePath)) {
+        return $false
+    }
+
+    $base = Get-NormalizedPath $BasePath
+    $candidate = Get-NormalizedPath $Path
+    if (-not $candidate.StartsWith($base, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $false
+    }
+
+    $relative = $candidate.Substring($base.Length).TrimStart('\', '/')
+    if ([string]::IsNullOrWhiteSpace($relative)) { return $false }
+
+    $topFolder = $relative.Split([char[]]@('\', '/'), 2)[0]
+    return @($script:ProtectedFolders) -contains $topFolder
 }
 
 function Test-IsJunk {
@@ -1158,6 +1225,7 @@ function Get-ItemStatus {
     if ($Item.IsJunk) { $statuses += 'Junk' }
     if ($Item.IsBroken) { $statuses += 'Broken' }
     if ($Item.IsDuplicate) { $statuses += 'Duplicate' }
+    if ($Item.IsProtected) { $statuses += 'Protected' }
     if ($statuses.Count -eq 0) { return 'OK' }
     return $statuses -join ', '
 }
@@ -1260,6 +1328,9 @@ function Invoke-GuardedFileOperation {
         if (-not $sourceRoot) {
             throw "Source path is outside approved roots: $SourcePath"
         }
+        if (Test-ProtectedFolder -Path $SourcePath -BasePath $sourceRoot) {
+            throw "Source path is protected: $SourcePath"
+        }
 
         if ($Action -eq 'Rename') {
             if ([string]::IsNullOrWhiteSpace($NewName)) {
@@ -1280,6 +1351,9 @@ function Invoke-GuardedFileOperation {
             }
             if ($sourceRoot -ne $destinationRoot) {
                 throw "$Action must stay within the same approved root."
+            }
+            if (Test-ProtectedFolder -Path $DestinationPath -BasePath $destinationRoot) {
+                throw "Destination path is protected: $DestinationPath"
             }
 
             if ((Test-Path -LiteralPath $DestinationPath) -and ((Get-NormalizedPath $SourcePath) -ne (Get-NormalizedPath $DestinationPath)) -and $CollisionPolicy -eq 'Fail') {
@@ -1839,6 +1913,7 @@ function Invoke-CurrentOperationPlan {
 function Refresh-Items {
     $paths = @(Get-StartMenuPaths)
     $junkPatterns = @($script:JunkPatterns)
+    $protectedFolders = @($script:ProtectedFolders)
     $userStartMenu = $Config.UserStartMenu
     $systemStartMenu = $Config.SystemStartMenu
 
@@ -1847,7 +1922,8 @@ function Refresh-Items {
             [string[]]$Paths,
             [string]$UserStartMenu,
             [string]$SystemStartMenu,
-            [string[]]$JunkPatterns
+            [string[]]$JunkPatterns,
+            [string[]]$ProtectedFolders
         )
 
         function Get-WorkerShortcutTarget {
@@ -1857,6 +1933,20 @@ function Refresh-Items {
             )
 
             try {
+                $extension = [System.IO.Path]::GetExtension($ShortcutPath).ToLowerInvariant()
+                if ($extension -eq '.url') {
+                    $urlLine = Get-Content -LiteralPath $ShortcutPath -ErrorAction Stop |
+                        Where-Object { $_ -match '^URL=' } |
+                        Select-Object -First 1
+                    if ($urlLine) {
+                        return ($urlLine -replace '^URL=', '').Trim()
+                    }
+                    return $null
+                }
+                if ($extension -eq '.appref-ms') {
+                    return $ShortcutPath
+                }
+
                 $shortcut = $Shell.CreateShortcut($ShortcutPath)
                 return $shortcut.TargetPath
             }
@@ -1871,15 +1961,30 @@ function Refresh-Items {
                 $Shell
             )
 
+            if (-not (Test-Path -LiteralPath $ShortcutPath)) { return $true }
+
+            $extension = [System.IO.Path]::GetExtension($ShortcutPath).ToLowerInvariant()
+            if ($extension -eq '.appref-ms') { return $false }
+
             $target = Get-WorkerShortcutTarget -ShortcutPath $ShortcutPath -Shell $Shell
             if ([string]::IsNullOrEmpty($target)) { return $false }
-            if ($target -match '^[A-Za-z]:\\Windows\\' -or
-                $target -match '^shell:' -or
-                $target -match '\.exe$' -eq $false) {
+            if ($target -match '^(https?|ftp)://') { return $false }
+            if ($target -match '^file://') {
+                $target = ([System.Uri]$target).LocalPath
+            }
+
+            $expandedTarget = [Environment]::ExpandEnvironmentVariables($target)
+            if ($expandedTarget -match '^[A-Za-z]:\\Windows\\' -or
+                $expandedTarget -match '^shell:' -or
+                $expandedTarget -match '^ms-[A-Za-z-]+:') {
                 return $false
             }
 
-            return -not (Test-Path -LiteralPath $target)
+            if ($expandedTarget -match '^[A-Za-z]:\\' -or $expandedTarget.StartsWith('\\')) {
+                return -not (Test-Path -LiteralPath $expandedTarget)
+            }
+
+            return $false
         }
 
         function Test-WorkerJunk {
@@ -1888,6 +1993,25 @@ function Refresh-Items {
                 if ($Name -like $pattern) { return $true }
             }
             return $false
+        }
+
+        function Test-WorkerProtected {
+            param(
+                [string]$Path,
+                [string]$BasePath
+            )
+
+            $base = ([System.IO.Path]::GetFullPath($BasePath)).TrimEnd('\', '/')
+            $candidate = ([System.IO.Path]::GetFullPath($Path)).TrimEnd('\', '/')
+            if (-not $candidate.StartsWith($base, [System.StringComparison]::OrdinalIgnoreCase)) {
+                return $false
+            }
+
+            $relative = $candidate.Substring($base.Length).TrimStart('\', '/')
+            if ([string]::IsNullOrWhiteSpace($relative)) { return $false }
+
+            $topFolder = $relative.Split([char[]]@('\', '/'), 2)[0]
+            return $ProtectedFolders -contains $topFolder
         }
 
         $items = [System.Collections.Generic.List[object]]::new()
@@ -1905,10 +2029,12 @@ function Refresh-Items {
                     $relativePath = $_.FullName.Substring($basePath.Length + 1)
                     $isFolder = $_.PSIsContainer
                     $isJunk = Test-WorkerJunk $_.BaseName
+                    $isProtected = Test-WorkerProtected -Path $_.FullName -BasePath $basePath
                     $isBroken = $false
                     $targetPath = ''
+                    $extension = $_.Extension.ToLowerInvariant()
 
-                    if (-not $isFolder -and $_.Extension -eq '.lnk') {
+                    if (-not $isFolder -and $extension -in @('.lnk', '.url', '.appref-ms')) {
                         $targetPath = Get-WorkerShortcutTarget -ShortcutPath $_.FullName -Shell $shell
                         $isBroken = Test-WorkerShortcutBroken -ShortcutPath $_.FullName -Shell $shell
 
@@ -1920,7 +2046,21 @@ function Refresh-Items {
                         }
                     }
 
-                    $itemType = if ($isFolder) { 'Folder' } elseif ($isJunk) { 'Junk' } else { 'Shortcut' }
+                    $itemType = if ($isFolder) {
+                        'Folder'
+                    }
+                    elseif ($extension -eq '.url') {
+                        'URL'
+                    }
+                    elseif ($extension -eq '.appref-ms') {
+                        'App Reference'
+                    }
+                    elseif ($isJunk) {
+                        'Junk'
+                    }
+                    else {
+                        'Shortcut'
+                    }
                     $item = [PSCustomObject]@{
                         IsSelected   = $false
                         DisplayName  = $_.BaseName
@@ -1931,6 +2071,7 @@ function Refresh-Items {
                         IsJunk       = $isJunk
                         IsBroken     = $isBroken
                         IsDuplicate  = $false
+                        IsProtected  = $isProtected
                         ItemType     = $itemType
                         TargetPath   = $targetPath
                         Status       = 'OK'
@@ -1956,6 +2097,7 @@ function Refresh-Items {
                 if ($item.IsJunk) { $statuses += 'Junk' }
                 if ($item.IsBroken) { $statuses += 'Broken' }
                 if ($item.IsDuplicate) { $statuses += 'Duplicate' }
+                if ($item.IsProtected) { $statuses += 'Protected' }
                 $item.Status = if ($statuses.Count -eq 0) { 'OK' } else { $statuses -join ', ' }
             }
 
@@ -1986,7 +2128,7 @@ function Refresh-Items {
     }
 
     Show-Progress -Value 0 -Maximum 100
-    Start-BackgroundWorker -Name "Scanning Start Menu..." -ScriptBlock $scanScript -Arguments @($paths, $userStartMenu, $systemStartMenu, $junkPatterns) -OnCompleted $completed | Out-Null
+    Start-BackgroundWorker -Name "Scanning Start Menu..." -ScriptBlock $scanScript -Arguments @($paths, $userStartMenu, $systemStartMenu, $junkPatterns, $protectedFolders) -OnCompleted $completed | Out-Null
 }
 
 function Apply-Filters {
@@ -2142,6 +2284,12 @@ function Delete-SelectedItems {
                 $failed++
                 continue
             }
+            if ($item.IsProtected) {
+                Write-Log "Skipped protected item: $($item.DisplayName)" 'Warning'
+                $undoItems += New-JournalItem -ActionType 'Delete' -OriginalPath $item.FullPath -Result 'Skipped' -Message 'Protected Start Menu item'
+                $failed++
+                continue
+            }
             
             if (Test-Path $item.FullPath) {
                 $undoItems += Invoke-JournaledDelete -Path $item.FullPath -OperationId $operationId
@@ -2290,10 +2438,15 @@ function Flatten-SingleItemFolders {
     foreach ($basePath in $paths) {
         $isSystem = $basePath -eq $Config.SystemStartMenu
         if ($isSystem -and -not $script:IsAdmin) { continue }
-        
+
         $folders = Get-ChildItem -Path $basePath -Directory -ErrorAction SilentlyContinue
-        
+
         foreach ($folder in $folders) {
+            if (Test-ProtectedFolder -Path $folder.FullName -BasePath $basePath) {
+                Write-Log "Skipped protected folder: $($folder.Name)" 'Warning'
+                continue
+            }
+
             $contents = Get-ChildItem -Path $folder.FullName -File -Filter "*.lnk" -ErrorAction SilentlyContinue
             $subfolders = Get-ChildItem -Path $folder.FullName -Directory -ErrorAction SilentlyContinue
             
@@ -2381,6 +2534,11 @@ function Remove-EmptyFolders {
                    Sort-Object { $_.FullName.Length } -Descending
         
         foreach ($folder in $folders) {
+            if (Test-ProtectedFolder -Path $folder.FullName -BasePath $basePath) {
+                Write-Log "Skipped protected folder: $($folder.Name)" 'Warning'
+                continue
+            }
+
             $contents = Get-ChildItem -Path $folder.FullName -Force -ErrorAction SilentlyContinue
             if ($contents.Count -eq 0) {
                 $emptyFolders += $folder
@@ -2439,6 +2597,11 @@ function Move-AllToRoot {
         
         # Get all shortcuts that are NOT in the root directory
         Get-ChildItem -Path $basePath -Recurse -Filter "*.lnk" -ErrorAction SilentlyContinue | ForEach-Object {
+            if (Test-ProtectedFolder -Path $_.FullName -BasePath $basePath) {
+                Write-Log "Skipped protected shortcut: $($_.BaseName)" 'Warning'
+                return
+            }
+
             $parentDir = Split-Path $_.FullName -Parent
             if ($parentDir -ne $basePath) {
                 $toMove += @{
@@ -2591,6 +2754,11 @@ function Move-ToCategory {
             $journalItems += New-JournalItem -ActionType 'Move' -OriginalPath $item.FullPath -Result 'Skipped' -Message 'Administrator privileges required'
             continue
         }
+        if ($item.IsProtected) {
+            Write-Log "Skipped protected item: $($item.DisplayName)" 'Warning'
+            $journalItems += New-JournalItem -ActionType 'Move' -OriginalPath $item.FullPath -Result 'Skipped' -Message 'Protected Start Menu item'
+            continue
+        }
 
         $destPath = $null
         try {
@@ -2628,6 +2796,11 @@ function Auto-OrganizeAll {
         if ($isSystem -and -not $script:IsAdmin) { continue }
         
         Get-ChildItem -Path $basePath -Recurse -Filter "*.lnk" -ErrorAction SilentlyContinue | ForEach-Object {
+            if (Test-ProtectedFolder -Path $_.FullName -BasePath $basePath) {
+                Write-Log "Skipped protected shortcut: $($_.BaseName)" 'Warning'
+                return
+            }
+
             $category = Get-ItemCategory $_.BaseName
             if ($category) {
                 $parentName = Split-Path (Split-Path $_.FullName -Parent) -Leaf
@@ -2774,6 +2947,11 @@ function Strip-VersionNumbers {
             $journalItems += New-JournalItem -ActionType 'Rename' -OriginalPath $entry.Item.FullPath -Result 'Skipped' -Message 'Administrator privileges required'
             continue
         }
+        if ($entry.Item.IsProtected) {
+            $journalItems += New-JournalItem -ActionType 'Rename' -OriginalPath $entry.Item.FullPath -Result 'Skipped' -Message 'Protected Start Menu item'
+            Write-Log "Skipped protected item: $($entry.Item.DisplayName)" 'Warning'
+            continue
+        }
 
         $newPath = $null
         try {
@@ -2863,6 +3041,11 @@ function Clean-Names {
             $journalItems += New-JournalItem -ActionType 'Rename' -OriginalPath $entry.Item.FullPath -Result 'Skipped' -Message 'Administrator privileges required'
             continue
         }
+        if ($entry.Item.IsProtected) {
+            $journalItems += New-JournalItem -ActionType 'Rename' -OriginalPath $entry.Item.FullPath -Result 'Skipped' -Message 'Protected Start Menu item'
+            Write-Log "Skipped protected item: $($entry.Item.DisplayName)" 'Warning'
+            continue
+        }
 
         $newPath = $null
         try {
@@ -2942,6 +3125,11 @@ function Find-Replace-Names {
     foreach ($entry in $toRename) {
         if ($entry.Item.IsSystem -and -not $script:IsAdmin) {
             $journalItems += New-JournalItem -ActionType 'Rename' -OriginalPath $entry.Item.FullPath -Result 'Skipped' -Message 'Administrator privileges required'
+            continue
+        }
+        if ($entry.Item.IsProtected) {
+            $journalItems += New-JournalItem -ActionType 'Rename' -OriginalPath $entry.Item.FullPath -Result 'Skipped' -Message 'Protected Start Menu item'
+            Write-Log "Skipped protected item: $($entry.Item.DisplayName)" 'Warning'
             continue
         }
 

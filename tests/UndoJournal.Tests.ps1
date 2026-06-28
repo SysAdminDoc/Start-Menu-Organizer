@@ -14,6 +14,7 @@ if ($parseErrors.Count -gt 0) {
 
 $helperFunctions = @(
     'Get-NormalizedPath',
+    'Test-ProtectedFolder',
     'Test-PathWithinRoot',
     'Get-ApprovedMutationRoot',
     'Ensure-JournalStorage',
@@ -78,6 +79,7 @@ try {
         UserStartMenu = $liveRoot
         SystemStartMenu = Join-Path $testRoot 'system-start'
     }
+    $script:ProtectedFolders = @('Startup')
 
     $operationId = New-OperationId
     $record = Invoke-JournaledDelete -Path $sourcePath -OperationId $operationId

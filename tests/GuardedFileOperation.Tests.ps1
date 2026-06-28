@@ -14,6 +14,7 @@ if ($parseErrors.Count -gt 0) {
 
 $helperFunctions = @(
     'Get-NormalizedPath',
+    'Test-ProtectedFolder',
     'Test-PathWithinRoot',
     'Get-ApprovedMutationRoot',
     'Ensure-JournalStorage',
@@ -51,6 +52,7 @@ try {
         UndoFile = Join-Path $undoRoot 'undo.json'
         UndoBackupRoot = Join-Path $undoRoot 'UndoBackups'
     }
+    $script:ProtectedFolders = @('Startup')
 
     $previewPath = Join-Path $userRoot 'preview-delete.lnk'
     Set-Content -LiteralPath $previewPath -Value 'preview'
@@ -90,6 +92,14 @@ try {
     }
     if (-not (Test-Path -LiteralPath $delete.BackupPath)) {
         throw 'Failed: guarded delete did not create a rollback backup.'
+    }
+
+    $protectedPath = Join-Path $userRoot 'Startup\do-not-delete.lnk'
+    [System.IO.Directory]::CreateDirectory((Split-Path $protectedPath -Parent)) | Out-Null
+    Set-Content -LiteralPath $protectedPath -Value 'protected'
+    $protectedDelete = Invoke-GuardedFileOperation -Action 'Delete' -SourcePath $protectedPath
+    if ($protectedDelete.Result -ne 'Failed' -or $protectedDelete.Message -notmatch 'protected') {
+        throw "Failed: protected delete was not rejected. $($protectedDelete.Result) $($protectedDelete.Message)"
     }
 }
 finally {

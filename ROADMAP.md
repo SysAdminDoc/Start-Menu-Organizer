@@ -2,13 +2,6 @@
 
 ## Research-Driven Additions
 
-- [ ] P1 - Add protected folders and richer shortcut validation
-  Why: Competitors preserve system folders and validate more than `.exe` targets; current broken-link detection misses folders, documents, app references, and URL shortcuts.
-  Evidence: `StartMenuOrganizerPro.ps1:984`, ClearWinStart preserved folders, Microsoft Shell Links docs.
-  Touches: `Test-ShortcutBroken`, `Get-ShortcutTarget`, folder flatten/delete logic, default settings.
-  Acceptance: Built-in preserved folders are never flattened/deleted by default, `.lnk` targets are validated by target type, `.url` and app-reference shortcuts are classified, and skipped protected items are logged.
-  Complexity: M
-
 - [ ] P1 - Persist settings automatically
   Why: The UI supports import/export but does not load `$Config.ConfigFile` at startup or save edits as user preferences.
   Evidence: `StartMenuOrganizerPro.ps1:33`, `StartMenuOrganizerPro.ps1:2070`, `StartMenuOrganizerPro.ps1:2091`, Start Menu Helper options model.
