@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.12.0 - 2026-06-28
+
+- Added centralized UI string metadata with optional JSON localization overrides under `%LOCALAPPDATA%\StartMenuOrganizerPro\Localization`.
+- Added automation names, help text, and tooltip backfill for core interactive controls.
+- Added an explicit tab-order list for primary scan, action, plan, settings, and log controls.
+- Raised muted text contrast and added contrast/localization regression coverage.
+
 ## v0.11.0 - 2026-06-28
 
 - Added dated JSONL file logging under `%LOCALAPPDATA%\StartMenuOrganizerPro\Logs`.

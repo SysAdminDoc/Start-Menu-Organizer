@@ -14,7 +14,7 @@ Describe 'Start Menu Organizer static gates' {
     It 'keeps the app version aligned with README' {
         $scriptText = Get-Content -LiteralPath $script:ScriptPath -Raw
         $readmeText = Get-Content -LiteralPath (Join-Path $script:RepoRoot 'README.md') -Raw
-        $scriptText | Should -Match 'Version\s+=\s+"0\.11\.0"'
-        $readmeText | Should -Match 'Version-v0\.11\.0'
+        $scriptText | Should -Match 'Version\s+=\s+"0\.12\.0"'
+        $readmeText | Should -Match 'Version-v0\.12\.0'
     }
 }

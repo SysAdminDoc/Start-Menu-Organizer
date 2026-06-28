@@ -27,7 +27,7 @@
 # ============================================================================
 
 $script:Config = @{
-    Version         = "0.11.0"
+    Version         = "0.12.0"
     SettingsSchema  = 1
     UserStartMenu   = [Environment]::GetFolderPath('StartMenu') + '\Programs'
     SystemStartMenu = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs"
@@ -36,6 +36,7 @@ $script:Config = @{
     UndoFile        = "$env:LOCALAPPDATA\StartMenuOrganizerPro\undo.json"
     UndoBackupRoot  = "$env:LOCALAPPDATA\StartMenuOrganizerPro\UndoBackups"
     LogRoot         = "$env:LOCALAPPDATA\StartMenuOrganizerPro\Logs"
+    LocalizationRoot = "$env:LOCALAPPDATA\StartMenuOrganizerPro\Localization"
     MaxUndoSteps    = 50
     MaxLogFiles     = 14
 }
@@ -142,7 +143,7 @@ $script:WScriptShell = New-Object -ComObject WScript.Shell
         <SolidColorBrush x:Key="InfoColor" Color="#58a6ff"/>
         <SolidColorBrush x:Key="TextPrimary" Color="#e6edf3"/>
         <SolidColorBrush x:Key="TextSecondary" Color="#8b949e"/>
-        <SolidColorBrush x:Key="TextMuted" Color="#6e7681"/>
+        <SolidColorBrush x:Key="TextMuted" Color="#9da7b3"/>
         <SolidColorBrush x:Key="BorderColor" Color="#30363d"/>
         <SolidColorBrush x:Key="BorderHover" Color="#8b949e"/>
         
@@ -558,7 +559,7 @@ $script:WScriptShell = New-Object -ComObject WScript.Shell
                 </Grid.ColumnDefinitions>
                 
                 <StackPanel Grid.Column="0">
-                    <TextBlock Text="Start Menu Organizer Pro" FontSize="22" FontWeight="Bold" 
+                    <TextBlock x:Name="txtAppTitle" Text="Start Menu Organizer Pro" FontSize="22" FontWeight="Bold"
                                Foreground="{StaticResource TextPrimary}"/>
                     <TextBlock x:Name="txtAdminStatus" FontSize="11" Foreground="{StaticResource TextSecondary}" Margin="0,4,0,0"/>
                 </StackPanel>
@@ -621,26 +622,26 @@ $script:WScriptShell = New-Object -ComObject WScript.Shell
                             </Grid.ColumnDefinitions>
                             
                             <StackPanel Grid.Column="0" Orientation="Horizontal">
-                                <TextBlock Text="Scope:" Foreground="{StaticResource TextSecondary}" 
+                                <TextBlock x:Name="lblScope" Text="Scope:" Foreground="{StaticResource TextSecondary}"
                                            VerticalAlignment="Center" Margin="0,0,8,0"/>
                                 <ComboBox x:Name="cmbScope" Width="150">
-                                    <ComboBoxItem Content="User Start Menu"/>
-                                    <ComboBoxItem Content="System Start Menu"/>
-                                    <ComboBoxItem Content="Both" IsSelected="True"/>
+                                    <ComboBoxItem x:Name="cmbScopeUser" Content="User Start Menu"/>
+                                    <ComboBoxItem x:Name="cmbScopeSystem" Content="System Start Menu"/>
+                                    <ComboBoxItem x:Name="cmbScopeBoth" Content="Both" IsSelected="True"/>
                                 </ComboBox>
                                 <Button x:Name="btnRefresh" Content="Refresh" Style="{StaticResource SmallButton}" 
                                         Margin="10,0,0,0" ToolTip="F5"/>
                             </StackPanel>
                             
                             <StackPanel Grid.Column="2" Orientation="Horizontal">
-                                <TextBlock Text="Sort:" Foreground="{StaticResource TextSecondary}" 
+                                <TextBlock x:Name="lblSort" Text="Sort:" Foreground="{StaticResource TextSecondary}"
                                            VerticalAlignment="Center" Margin="0,0,8,0"/>
                                 <ComboBox x:Name="cmbSort" Width="140">
-                                    <ComboBoxItem Content="Name" IsSelected="True"/>
-                                    <ComboBoxItem Content="Type"/>
-                                    <ComboBoxItem Content="Status"/>
-                                    <ComboBoxItem Content="Location"/>
-                                    <ComboBoxItem Content="Target"/>
+                                    <ComboBoxItem x:Name="cmbSortName" Content="Name" IsSelected="True"/>
+                                    <ComboBoxItem x:Name="cmbSortType" Content="Type"/>
+                                    <ComboBoxItem x:Name="cmbSortStatus" Content="Status"/>
+                                    <ComboBoxItem x:Name="cmbSortLocation" Content="Location"/>
+                                    <ComboBoxItem x:Name="cmbSortTarget" Content="Target"/>
                                 </ComboBox>
                                 <CheckBox x:Name="chkPreviewMode" Content="Preview Mode" Margin="15,0,0,0" 
                                           VerticalAlignment="Center" ToolTip="Show what actions would do without executing"/>
@@ -651,7 +652,7 @@ $script:WScriptShell = New-Object -ComObject WScript.Shell
                     <!-- Filter Bar -->
                     <Border Grid.Row="1" Padding="12,8" Background="{StaticResource TertiaryBg}">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="Filter:" Foreground="{StaticResource TextSecondary}" 
+                            <TextBlock x:Name="lblFilter" Text="Filter:" Foreground="{StaticResource TextSecondary}"
                                        VerticalAlignment="Center" Margin="0,0,10,0"/>
                             <CheckBox x:Name="chkShowShortcuts" Content="Shortcuts" IsChecked="True" Margin="0,0,15,0"/>
                             <CheckBox x:Name="chkShowFolders" Content="Folders" IsChecked="True" Margin="0,0,15,0"/>
@@ -694,11 +695,11 @@ $script:WScriptShell = New-Object -ComObject WScript.Shell
                         <DataGrid.Columns>
                             <DataGridCheckBoxColumn Binding="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
                                                     Width="40" CanUserResize="False"/>
-                            <DataGridTextColumn Header="Name" Binding="{Binding DisplayName}" Width="200"/>
-                            <DataGridTextColumn Header="Type" Binding="{Binding ItemType}" Width="80"/>
-                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="90"/>
-                            <DataGridTextColumn Header="Location" Binding="{Binding RelativePath}" Width="200"/>
-                            <DataGridTextColumn Header="Target" Binding="{Binding TargetPath}" Width="*"/>
+                            <DataGridTextColumn x:Name="colName" Header="Name" Binding="{Binding DisplayName}" Width="200"/>
+                            <DataGridTextColumn x:Name="colType" Header="Type" Binding="{Binding ItemType}" Width="80"/>
+                            <DataGridTextColumn x:Name="colStatus" Header="Status" Binding="{Binding Status}" Width="90"/>
+                            <DataGridTextColumn x:Name="colLocation" Header="Location" Binding="{Binding RelativePath}" Width="200"/>
+                            <DataGridTextColumn x:Name="colTarget" Header="Target" Binding="{Binding TargetPath}" Width="*"/>
                         </DataGrid.Columns>
                     </DataGrid>
                     
@@ -732,11 +733,11 @@ $script:WScriptShell = New-Object -ComObject WScript.Shell
                     BorderBrush="{StaticResource BorderColor}" BorderThickness="1">
                 <TabControl>
                     <!-- Actions Tab -->
-                    <TabItem Header="Actions">
+                    <TabItem x:Name="tabActions" Header="Actions">
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <StackPanel Margin="15">
                                 <!-- Cleanup Section -->
-                                <TextBlock Text="CLEANUP" FontSize="11" FontWeight="Bold" 
+                                <TextBlock x:Name="txtCleanupHeader" Text="CLEANUP" FontSize="11" FontWeight="Bold"
                                            Foreground="{StaticResource TextMuted}" Margin="0,0,0,10"/>
                                 
                                 <Button x:Name="btnDeleteSelected" Content="Delete Selected" 
@@ -756,7 +757,7 @@ $script:WScriptShell = New-Object -ComObject WScript.Shell
                                         ToolTip="Move all shortcuts from folders to the Start Menu root"/>
                                 
                                 <!-- Organize Section -->
-                                <TextBlock Text="ORGANIZE" FontSize="11" FontWeight="Bold" 
+                                <TextBlock x:Name="txtOrganizeHeader" Text="ORGANIZE" FontSize="11" FontWeight="Bold"
                                            Foreground="{StaticResource TextMuted}" Margin="0,0,0,10"/>
                                 
                                 <Grid Margin="0,0,0,8">
@@ -772,7 +773,7 @@ $script:WScriptShell = New-Object -ComObject WScript.Shell
                                         Style="{StaticResource ModernButton}" Margin="0,0,0,20"/>
                                 
                                 <!-- Rename Section -->
-                                <TextBlock Text="BATCH RENAME" FontSize="11" FontWeight="Bold" 
+                                <TextBlock x:Name="txtBatchRenameHeader" Text="BATCH RENAME" FontSize="11" FontWeight="Bold"
                                            Foreground="{StaticResource TextMuted}" Margin="0,0,0,10"/>
                                 
                                 <Button x:Name="btnStripVersions" Content="Strip Version Numbers" 
@@ -799,7 +800,7 @@ $script:WScriptShell = New-Object -ComObject WScript.Shell
                                 </Grid>
 
                                 <!-- Transaction Plan Section -->
-                                <TextBlock Text="TRANSACTION PLAN" FontSize="11" FontWeight="Bold"
+                                <TextBlock x:Name="txtTransactionPlanHeader" Text="TRANSACTION PLAN" FontSize="11" FontWeight="Bold"
                                            Foreground="{StaticResource TextMuted}" Margin="0,15,0,10"/>
                                 <TextBlock x:Name="txtPlanStatus" Text="No plan loaded"
                                            Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap"
@@ -826,7 +827,7 @@ $script:WScriptShell = New-Object -ComObject WScript.Shell
                                 </Grid>
 
                                 <!-- Quick Open Section -->
-                                <TextBlock Text="QUICK OPEN" FontSize="11" FontWeight="Bold"
+                                <TextBlock x:Name="txtQuickOpenHeader" Text="QUICK OPEN" FontSize="11" FontWeight="Bold"
                                            Foreground="{StaticResource TextMuted}" Margin="0,15,0,10"/>
                                 
                                 <StackPanel Orientation="Horizontal">
@@ -842,11 +843,11 @@ $script:WScriptShell = New-Object -ComObject WScript.Shell
                     </TabItem>
                     
                     <!-- Settings Tab -->
-                    <TabItem Header="Settings">
+                    <TabItem x:Name="tabSettings" Header="Settings">
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <StackPanel Margin="15">
                                 <!-- Junk Patterns -->
-                                <TextBlock Text="JUNK PATTERNS" FontSize="11" FontWeight="Bold" 
+                                <TextBlock x:Name="txtJunkPatternsHeader" Text="JUNK PATTERNS" FontSize="11" FontWeight="Bold"
                                            Foreground="{StaticResource TextMuted}" Margin="0,0,0,10"/>
                                 
                                 <ListBox x:Name="lstJunkPatterns" Height="150" Margin="0,0,0,8"/>
@@ -865,7 +866,7 @@ $script:WScriptShell = New-Object -ComObject WScript.Shell
                                 </Grid>
                                 
                                 <!-- Category Management -->
-                                <TextBlock Text="CATEGORIES" FontSize="11" FontWeight="Bold" 
+                                <TextBlock x:Name="txtCategoriesHeader" Text="CATEGORIES" FontSize="11" FontWeight="Bold"
                                            Foreground="{StaticResource TextMuted}" Margin="0,15,0,10"/>
                                 
                                 <ComboBox x:Name="cmbEditCategory" Margin="0,0,0,8"/>
@@ -885,7 +886,7 @@ $script:WScriptShell = New-Object -ComObject WScript.Shell
                                 </Grid>
                                 
                                 <!-- Import/Export -->
-                                <TextBlock Text="CONFIGURATION" FontSize="11" FontWeight="Bold" 
+                                <TextBlock x:Name="txtConfigurationHeader" Text="CONFIGURATION" FontSize="11" FontWeight="Bold"
                                            Foreground="{StaticResource TextMuted}" Margin="0,15,0,10"/>
                                 
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
@@ -901,7 +902,7 @@ $script:WScriptShell = New-Object -ComObject WScript.Shell
                     </TabItem>
                     
                     <!-- Log Tab -->
-                    <TabItem Header="Log">
+                    <TabItem x:Name="tabLog" Header="Log">
                         <Grid Margin="10">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="*"/>
@@ -973,6 +974,234 @@ $script:IsLoadingConfiguration = $false
 $script:SessionId = [System.Guid]::NewGuid().ToString('N')
 $script:LogFilePath = $null
 $script:UnhandledExceptionHandlersRegistered = $false
+$script:UiStrings = [ordered]@{}
+$script:DefaultUiStrings = [ordered]@{
+    'Window.Title' = 'Start Menu Organizer v{0}'
+    'txtAppTitle.Text' = 'Start Menu Organizer Pro'
+    'txtSearchPlaceholder.Text' = 'Search items... (Ctrl+F)'
+    'btnCancelWork.Content' = 'Cancel'
+    'btnUndo.Content' = 'Undo'
+    'btnUndo.ToolTip' = 'Undo the last reversible operation'
+    'btnBackup.Content' = 'Backup'
+    'btnRestore.Content' = 'Restore'
+    'lblScope.Text' = 'Scope:'
+    'cmbScopeUser.Content' = 'User Start Menu'
+    'cmbScopeSystem.Content' = 'System Start Menu'
+    'cmbScopeBoth.Content' = 'Both'
+    'btnRefresh.Content' = 'Refresh'
+    'btnRefresh.ToolTip' = 'Refresh the Start Menu scan'
+    'lblSort.Text' = 'Sort:'
+    'cmbSortName.Content' = 'Name'
+    'cmbSortType.Content' = 'Type'
+    'cmbSortStatus.Content' = 'Status'
+    'cmbSortLocation.Content' = 'Location'
+    'cmbSortTarget.Content' = 'Target'
+    'chkPreviewMode.Content' = 'Preview Mode'
+    'chkPreviewMode.ToolTip' = 'Show what actions would do without executing'
+    'lblFilter.Text' = 'Filter:'
+    'chkShowShortcuts.Content' = 'Shortcuts'
+    'chkShowFolders.Content' = 'Folders'
+    'chkShowJunk.Content' = 'Junk'
+    'chkShowBroken.Content' = 'Broken'
+    'chkShowDuplicates.Content' = 'Duplicates'
+    'ctxDelete.Header' = 'Delete'
+    'ctxRename.Header' = 'Rename'
+    'ctxOpenLocation.Header' = 'Open File Location'
+    'ctxOpenTarget.Header' = 'Open Target Location'
+    'ctxMoveToCategory.Header' = 'Move to Category'
+    'ctxCatDev.Header' = 'Development'
+    'ctxCatBrowsers.Header' = 'Browsers'
+    'ctxCatComm.Header' = 'Communication'
+    'ctxCatMedia.Header' = 'Media'
+    'ctxCatGraphics.Header' = 'Graphics'
+    'ctxCatOffice.Header' = 'Office'
+    'ctxCatUtils.Header' = 'Utilities'
+    'ctxCatGaming.Header' = 'Gaming'
+    'ctxCatSystem.Header' = 'System'
+    'ctxCatSecurity.Header' = 'Security'
+    'ctxCatNetwork.Header' = 'Networking'
+    'ctxSelectAll.Header' = 'Select All'
+    'ctxSelectNone.Header' = 'Select None'
+    'colName.Header' = 'Name'
+    'colType.Header' = 'Type'
+    'colStatus.Header' = 'Status'
+    'colLocation.Header' = 'Location'
+    'colTarget.Header' = 'Target'
+    'btnSelectAll.Content' = 'All'
+    'btnSelectNone.Content' = 'None'
+    'btnSelectJunk.Content' = 'Junk'
+    'btnSelectBroken.Content' = 'Broken'
+    'btnSelectDuplicates.Content' = 'Duplicates'
+    'btnSelectFolders.Content' = 'Folders'
+    'btnInvertSelection.Content' = 'Invert'
+    'tabActions.Header' = 'Actions'
+    'txtCleanupHeader.Text' = 'CLEANUP'
+    'btnDeleteSelected.Content' = 'Delete Selected'
+    'btnRemoveAllJunk.Content' = 'Remove All Junk'
+    'btnRemoveBroken.Content' = 'Remove Broken Shortcuts'
+    'btnRemoveDuplicates.Content' = 'Remove Duplicates'
+    'btnFlattenFolders.Content' = 'Flatten Single-Item Folders'
+    'btnRemoveEmpty.Content' = 'Remove Empty Folders'
+    'btnMoveAllToRoot.Content' = 'Move All to Root'
+    'btnMoveAllToRoot.ToolTip' = 'Move all shortcuts from folders to the Start Menu root'
+    'txtOrganizeHeader.Text' = 'ORGANIZE'
+    'btnMoveToCategory.Content' = 'Move'
+    'btnAutoOrganize.Content' = 'Auto-Organize All'
+    'txtBatchRenameHeader.Text' = 'BATCH RENAME'
+    'btnStripVersions.Content' = 'Strip Version Numbers'
+    'btnCleanNames.Content' = 'Clean Up Names'
+    'txtFindPlaceholder.Text' = 'Find:'
+    'txtReplacePlaceholder.Text' = 'Replace:'
+    'btnFindReplace.Content' = 'Find & Replace in Names'
+    'txtTransactionPlanHeader.Text' = 'TRANSACTION PLAN'
+    'txtPlanStatus.Text' = 'No plan loaded'
+    'btnExportPlan.Content' = 'Export Plan'
+    'btnImportPlan.Content' = 'Import Plan'
+    'btnExecutePlan.Content' = 'Execute Plan'
+    'btnClearPlan.Content' = 'Clear Plan'
+    'txtQuickOpenHeader.Text' = 'QUICK OPEN'
+    'btnOpenUserMenu.Content' = 'User Menu'
+    'btnOpenSystemMenu.Content' = 'System Menu'
+    'btnOpenBackups.Content' = 'Backups'
+    'tabSettings.Header' = 'Settings'
+    'txtJunkPatternsHeader.Text' = 'JUNK PATTERNS'
+    'btnAddJunkPattern.Content' = 'Add'
+    'btnRemoveJunkPattern.Content' = 'Remove'
+    'txtCategoriesHeader.Text' = 'CATEGORIES'
+    'btnAddCategoryPattern.Content' = 'Add'
+    'btnRemoveCategoryPattern.Content' = 'Remove'
+    'txtConfigurationHeader.Text' = 'CONFIGURATION'
+    'btnExportConfig.Content' = 'Export Config'
+    'btnImportConfig.Content' = 'Import Config'
+    'btnResetConfig.Content' = 'Reset to Defaults'
+    'tabLog.Header' = 'Log'
+    'btnClearLog.Content' = 'Clear Log'
+    'Status.AdminFullAccess' = 'Running as Administrator - Full access to User and System Start Menu'
+    'Status.StandardUser' = 'Standard User - Limited to User Start Menu (Run as Admin for full access)'
+    'txtSearch.AutomationName' = 'Search Start Menu items'
+    'txtSearch.HelpText' = 'Filters the item list by name, path, or target.'
+    'btnCancelWork.AutomationName' = 'Cancel active work'
+    'btnCancelWork.HelpText' = 'Stops the active scan or operation plan worker.'
+    'btnUndo.AutomationName' = 'Undo last action'
+    'btnUndo.HelpText' = 'Restores the latest reversible operation from the undo journal.'
+    'btnBackup.AutomationName' = 'Create backup'
+    'btnBackup.HelpText' = 'Creates a timestamped backup of selected Start Menu scopes.'
+    'btnRestore.AutomationName' = 'Restore backup'
+    'btnRestore.HelpText' = 'Restores a previous Start Menu backup after staging and validation.'
+    'cmbScope.AutomationName' = 'Start Menu scope'
+    'cmbScope.HelpText' = 'Selects whether scans target the user Start Menu, system Start Menu, or both.'
+    'btnRefresh.AutomationName' = 'Refresh items'
+    'btnRefresh.HelpText' = 'Scans the selected Start Menu scope again.'
+    'cmbSort.AutomationName' = 'Sort items'
+    'cmbSort.HelpText' = 'Selects the column used to sort the item list.'
+    'chkPreviewMode.AutomationName' = 'Preview mode'
+    'chkPreviewMode.HelpText' = 'Builds a reviewed operation plan instead of changing files immediately.'
+    'dgItems.AutomationName' = 'Start Menu items'
+    'dgItems.HelpText' = 'Displays detected shortcuts and folders with status, location, and target path.'
+    'btnDeleteSelected.AutomationName' = 'Delete selected items'
+    'btnRemoveAllJunk.AutomationName' = 'Remove all junk items'
+    'btnRemoveBroken.AutomationName' = 'Remove broken shortcuts'
+    'btnRemoveDuplicates.AutomationName' = 'Remove duplicate shortcuts'
+    'btnFlattenFolders.AutomationName' = 'Flatten single item folders'
+    'btnRemoveEmpty.AutomationName' = 'Remove empty folders'
+    'btnMoveAllToRoot.AutomationName' = 'Move all shortcuts to root'
+    'cmbCategory.AutomationName' = 'Target category'
+    'cmbCategory.HelpText' = 'Selects the category folder for selected shortcuts.'
+    'btnMoveToCategory.AutomationName' = 'Move selected items to category'
+    'btnAutoOrganize.AutomationName' = 'Auto organize all items'
+    'btnStripVersions.AutomationName' = 'Strip version numbers'
+    'btnCleanNames.AutomationName' = 'Clean names'
+    'txtFindText.AutomationName' = 'Find text'
+    'txtFindText.HelpText' = 'Text to find in selected shortcut names.'
+    'txtReplaceText.AutomationName' = 'Replacement text'
+    'txtReplaceText.HelpText' = 'Replacement text for matching shortcut names.'
+    'btnFindReplace.AutomationName' = 'Find and replace in names'
+    'btnExportPlan.AutomationName' = 'Export operation plan'
+    'btnImportPlan.AutomationName' = 'Import operation plan'
+    'btnExecutePlan.AutomationName' = 'Execute operation plan'
+    'btnClearPlan.AutomationName' = 'Clear operation plan'
+    'lstJunkPatterns.AutomationName' = 'Junk patterns'
+    'txtNewJunkPattern.AutomationName' = 'New junk pattern'
+    'btnAddJunkPattern.AutomationName' = 'Add junk pattern'
+    'btnRemoveJunkPattern.AutomationName' = 'Remove junk pattern'
+    'cmbEditCategory.AutomationName' = 'Category to edit'
+    'lstCategoryPatterns.AutomationName' = 'Category patterns'
+    'txtNewCategoryPattern.AutomationName' = 'New category pattern'
+    'btnAddCategoryPattern.AutomationName' = 'Add category pattern'
+    'btnRemoveCategoryPattern.AutomationName' = 'Remove category pattern'
+    'btnExportConfig.AutomationName' = 'Export configuration'
+    'btnImportConfig.AutomationName' = 'Import configuration'
+    'btnResetConfig.AutomationName' = 'Reset configuration to defaults'
+    'txtLog.AutomationName' = 'Activity log'
+    'txtLog.HelpText' = 'Shows session activity; persistent logs are written to the local app data logs folder.'
+    'btnClearLog.AutomationName' = 'Clear activity log'
+}
+$script:UiTabOrder = @(
+    'txtSearch',
+    'btnCancelWork',
+    'btnUndo',
+    'btnBackup',
+    'btnRestore',
+    'cmbScope',
+    'btnRefresh',
+    'cmbSort',
+    'chkPreviewMode',
+    'chkShowShortcuts',
+    'chkShowFolders',
+    'chkShowJunk',
+    'chkShowBroken',
+    'chkShowDuplicates',
+    'dgItems',
+    'btnSelectAll',
+    'btnSelectNone',
+    'btnSelectJunk',
+    'btnSelectBroken',
+    'btnSelectDuplicates',
+    'btnSelectFolders',
+    'btnInvertSelection',
+    'btnDeleteSelected',
+    'btnRemoveAllJunk',
+    'btnRemoveBroken',
+    'btnRemoveDuplicates',
+    'btnFlattenFolders',
+    'btnRemoveEmpty',
+    'btnMoveAllToRoot',
+    'cmbCategory',
+    'btnMoveToCategory',
+    'btnAutoOrganize',
+    'btnStripVersions',
+    'btnCleanNames',
+    'txtFindText',
+    'txtReplaceText',
+    'btnFindReplace',
+    'btnExportPlan',
+    'btnImportPlan',
+    'btnExecutePlan',
+    'btnClearPlan',
+    'btnOpenUserMenu',
+    'btnOpenSystemMenu',
+    'btnOpenBackups',
+    'lstJunkPatterns',
+    'txtNewJunkPattern',
+    'btnAddJunkPattern',
+    'btnRemoveJunkPattern',
+    'cmbEditCategory',
+    'lstCategoryPatterns',
+    'txtNewCategoryPattern',
+    'btnAddCategoryPattern',
+    'btnRemoveCategoryPattern',
+    'btnExportConfig',
+    'btnImportConfig',
+    'btnResetConfig',
+    'btnClearLog'
+)
+$script:ThemeContrastPairs = @(
+    @{ Name = 'Primary text on primary background'; Foreground = '#e6edf3'; Background = '#0d1117'; Minimum = 4.5 },
+    @{ Name = 'Secondary text on secondary background'; Foreground = '#8b949e'; Background = '#161b22'; Minimum = 4.5 },
+    @{ Name = 'Muted text on secondary background'; Foreground = '#9da7b3'; Background = '#161b22'; Minimum = 4.5 },
+    @{ Name = 'White text on accent button'; Foreground = '#ffffff'; Background = '#238636'; Minimum = 4.5 },
+    @{ Name = 'White text on danger button'; Foreground = '#ffffff'; Background = '#da3633'; Minimum = 4.5 }
+)
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -1144,6 +1373,238 @@ function Register-UnhandledExceptionHandlers {
     }
 
     $script:UnhandledExceptionHandlersRegistered = $true
+}
+
+function Import-UiStringFile {
+    param([string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+
+    try {
+        $overrides = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+        foreach ($property in $overrides.PSObject.Properties) {
+            if ($null -ne $property.Value) {
+                $script:UiStrings[$property.Name] = [string]$property.Value
+            }
+        }
+        Write-StructuredLogEntry -Message "Loaded UI strings: $Path" -Level 'Info'
+    }
+    catch {
+        Write-StructuredLogEntry -Message "Failed to load UI strings: $Path" -Level 'Warning' -Exception $_
+    }
+}
+
+function Load-UiStrings {
+    $script:UiStrings = [ordered]@{}
+    foreach ($entry in $script:DefaultUiStrings.GetEnumerator()) {
+        $script:UiStrings[$entry.Key] = $entry.Value
+    }
+
+    if ([string]::IsNullOrWhiteSpace($Config.LocalizationRoot)) { return }
+
+    $culture = [System.Globalization.CultureInfo]::CurrentUICulture
+    $neutralCulture = $culture.TwoLetterISOLanguageName
+    $candidateNames = @(
+        "strings.$($culture.Name).json",
+        "strings.$neutralCulture.json",
+        'strings.json'
+    ) | Select-Object -Unique
+
+    foreach ($candidateName in $candidateNames) {
+        Import-UiStringFile -Path (Join-Path $Config.LocalizationRoot $candidateName)
+    }
+}
+
+function Get-UiString {
+    param(
+        [string]$Key,
+        [object[]]$FormatArgs = @()
+    )
+
+    $value = $null
+    if ($script:UiStrings.Contains($Key)) {
+        $value = $script:UiStrings[$Key]
+    }
+    elseif ($script:DefaultUiStrings.Contains($Key)) {
+        $value = $script:DefaultUiStrings[$Key]
+    }
+    else {
+        return $Key
+    }
+
+    if ($FormatArgs.Count -gt 0) {
+        return [string]::Format($value, $FormatArgs)
+    }
+
+    return $value
+}
+
+function Get-NamedUiControl {
+    param([string]$Name)
+
+    $variable = Get-Variable -Name $Name -Scope Script -ErrorAction SilentlyContinue
+    if ($variable -and $variable.Value) {
+        return $variable.Value
+    }
+
+    if ($dgItems) {
+        $columnMap = @{
+            colName = 1
+            colType = 2
+            colStatus = 3
+            colLocation = 4
+            colTarget = 5
+        }
+        if ($columnMap.ContainsKey($Name) -and $dgItems.Columns.Count -gt $columnMap[$Name]) {
+            return $dgItems.Columns[$columnMap[$Name]]
+        }
+    }
+
+    return $null
+}
+
+function Set-NamedControlProperty {
+    param(
+        [string]$ControlName,
+        [string]$PropertyName,
+        [string]$Value
+    )
+
+    $control = Get-NamedUiControl -Name $ControlName
+    if (-not $control) { return $false }
+
+    try {
+        switch ($PropertyName) {
+            'Content' { $control.Content = $Value }
+            'Header' { $control.Header = $Value }
+            'Text' { $control.Text = $Value }
+            'ToolTip' { $control.ToolTip = $Value }
+            default { return $false }
+        }
+        return $true
+    }
+    catch {
+        Write-StructuredLogEntry -Message "Failed to set $ControlName.$PropertyName" -Level 'Warning' -Exception $_
+        return $false
+    }
+}
+
+function Apply-UiText {
+    $Window.Title = Get-UiString -Key 'Window.Title' -FormatArgs @($Config.Version)
+
+    foreach ($entry in $script:UiStrings.GetEnumerator()) {
+        if ($entry.Key -match '^(?<ControlName>[^.]+)\.(?<PropertyName>Content|Header|Text|ToolTip)$') {
+            Set-NamedControlProperty -ControlName $Matches.ControlName -PropertyName $Matches.PropertyName -Value $entry.Value | Out-Null
+        }
+    }
+}
+
+function Apply-UiAccessibilityMetadata {
+    foreach ($entry in $script:UiStrings.GetEnumerator()) {
+        if ($entry.Key -notmatch '^(?<ControlName>[^.]+)\.(?<PropertyName>AutomationName|HelpText)$') {
+            continue
+        }
+
+        $control = Get-NamedUiControl -Name $Matches.ControlName
+        if (-not $control) { continue }
+
+        if ($Matches.PropertyName -eq 'AutomationName') {
+            [System.Windows.Automation.AutomationProperties]::SetName($control, $entry.Value)
+        }
+        elseif ($Matches.PropertyName -eq 'HelpText') {
+            [System.Windows.Automation.AutomationProperties]::SetHelpText($control, $entry.Value)
+            if ($control.PSObject.Properties.Name -contains 'ToolTip' -and -not $control.ToolTip) {
+                $control.ToolTip = $entry.Value
+            }
+        }
+    }
+}
+
+function Set-UiTabOrder {
+    $tabIndex = 0
+    foreach ($controlName in $script:UiTabOrder) {
+        $control = Get-NamedUiControl -Name $controlName
+        if (-not $control) { continue }
+
+        try {
+            $control.TabIndex = $tabIndex
+            if ($control.PSObject.Properties.Name -contains 'IsTabStop') {
+                $control.IsTabStop = $true
+            }
+            $tabIndex++
+        }
+        catch {
+            Write-StructuredLogEntry -Message "Failed to set tab order for $controlName" -Level 'Warning' -Exception $_
+        }
+    }
+}
+
+function Initialize-UiLocalizationAndAccessibility {
+    Load-UiStrings
+    Apply-UiText
+    Apply-UiAccessibilityMetadata
+    Set-UiTabOrder
+}
+
+function Convert-HexColorToRgb {
+    param([string]$Color)
+
+    $hex = $Color.TrimStart('#')
+    if ($hex.Length -ne 6) {
+        throw "Expected #RRGGBB color: $Color"
+    }
+
+    return [PSCustomObject]@{
+        R = [Convert]::ToInt32($hex.Substring(0, 2), 16)
+        G = [Convert]::ToInt32($hex.Substring(2, 2), 16)
+        B = [Convert]::ToInt32($hex.Substring(4, 2), 16)
+    }
+}
+
+function Convert-SrgbChannelToLinear {
+    param([double]$Channel)
+
+    $normalized = $Channel / 255
+    if ($normalized -le 0.03928) {
+        return $normalized / 12.92
+    }
+
+    return [Math]::Pow((($normalized + 0.055) / 1.055), 2.4)
+}
+
+function Get-RelativeLuminance {
+    param([string]$Color)
+
+    $rgb = Convert-HexColorToRgb -Color $Color
+    $red = Convert-SrgbChannelToLinear -Channel $rgb.R
+    $green = Convert-SrgbChannelToLinear -Channel $rgb.G
+    $blue = Convert-SrgbChannelToLinear -Channel $rgb.B
+    return (0.2126 * $red) + (0.7152 * $green) + (0.0722 * $blue)
+}
+
+function Get-ContrastRatio {
+    param(
+        [string]$Foreground,
+        [string]$Background
+    )
+
+    $foregroundLuminance = Get-RelativeLuminance -Color $Foreground
+    $backgroundLuminance = Get-RelativeLuminance -Color $Background
+    $lighter = [Math]::Max($foregroundLuminance, $backgroundLuminance)
+    $darker = [Math]::Min($foregroundLuminance, $backgroundLuminance)
+    return [Math]::Round((($lighter + 0.05) / ($darker + 0.05)), 2)
+}
+
+function Test-ThemeContrast {
+    $script:ThemeContrastPairs | ForEach-Object {
+        $ratio = Get-ContrastRatio -Foreground $_.Foreground -Background $_.Background
+        [PSCustomObject]@{
+            Name = $_.Name
+            Ratio = $ratio
+            Minimum = [double]$_.Minimum
+            Pass = ($ratio -ge [double]$_.Minimum)
+        }
+    }
 }
 
 function Write-Log {
@@ -4087,13 +4548,15 @@ $Window.Add_KeyDown({
 # Load VB assembly for InputBox
 Add-Type -AssemblyName Microsoft.VisualBasic
 
+Initialize-UiLocalizationAndAccessibility
+
 # Set admin status
 if ($script:IsAdmin) {
-    $txtAdminStatus.Text = "Running as Administrator - Full access to User and System Start Menu"
+    $txtAdminStatus.Text = Get-UiString -Key 'Status.AdminFullAccess'
     $txtAdminStatus.Foreground = [System.Windows.Media.Brushes]::LightGreen
 }
 else {
-    $txtAdminStatus.Text = "Standard User - Limited to User Start Menu (Run as Admin for full access)"
+    $txtAdminStatus.Text = Get-UiString -Key 'Status.StandardUser'
     $txtAdminStatus.Foreground = [System.Windows.Media.Brushes]::Orange
 }
 

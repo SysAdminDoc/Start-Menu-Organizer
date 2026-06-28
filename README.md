@@ -2,7 +2,7 @@
 
 A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, remove duplicates, organize by category, and take full control of your Start Menu.
 
-![Version](https://img.shields.io/badge/Version-v0.11.0-blue)
+![Version](https://img.shields.io/badge/Version-v0.12.0-blue)
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-blue)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6)
 ![License](https://img.shields.io/badge/License-MIT-green)
@@ -47,6 +47,7 @@ A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, re
 - **Preview Mode** - See what actions would do without executing them
 - **Progress Bar** - Visual feedback for long operations
 - **Activity Log** - Color-coded operation history
+- **Accessibility Metadata** - Named controls, help text, predictable tab order, and verified contrast for core dark-theme text
 
 ### Safety Features
 - **Persistent Undo Support** (Ctrl+Z) - Recover reversible deletes, moves, renames, and restores from the saved operation journal
@@ -68,7 +69,7 @@ A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, re
 ## Installation
 
 ### Option 1: Installable Package
-1. Download `StartMenuOrganizer-v0.11.0.zip` from the release artifacts.
+1. Download `StartMenuOrganizer-v0.12.0.zip` from the release artifacts.
 2. Extract the zip to a local folder.
 3. Install for the current user:
 
@@ -177,6 +178,22 @@ Save your customized patterns:
 2. Click "Export Config"
 3. Save the JSON file
 
+### Localization Overrides
+UI strings are centralized in the app and can be overridden without editing layout logic. Add JSON files under `%LOCALAPPDATA%\StartMenuOrganizerPro\Localization`:
+
+- `strings.<culture>.json`, such as `strings.en-US.json`
+- `strings.<language>.json`, such as `strings.en.json`
+- `strings.json` as the fallback override file
+
+Each file maps string keys to replacement text, for example:
+
+```json
+{
+  "btnBackup.Content": "Create Backup",
+  "txtSearch.AutomationName": "Search Start Menu entries"
+}
+```
+
 ## Data Storage
 
 | Item | Location |
@@ -187,6 +204,7 @@ Save your customized patterns:
 | Undo backups | `%LOCALAPPDATA%\StartMenuOrganizerPro\UndoBackups` |
 | Config | `%LOCALAPPDATA%\StartMenuOrganizerPro\config.json` |
 | Logs and crash reports | `%LOCALAPPDATA%\StartMenuOrganizerPro\Logs` |
+| Localization overrides | `%LOCALAPPDATA%\StartMenuOrganizerPro\Localization` |
 
 ## Development
 
@@ -248,6 +266,12 @@ Run the structured logging regression test:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\Logging.Tests.ps1
+```
+
+Run the accessibility and localization regression test:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\AccessibilityLocalization.Tests.ps1
 ```
 
 ## Troubleshooting
