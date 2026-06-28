@@ -2,13 +2,6 @@
 
 ## Research-Driven Additions
 
-- [ ] P1 - Replace direct actions with editable transaction plans
-  Why: Direct peers make risky shortcut changes safer with dry-run/editable plan artifacts before execution.
-  Evidence: windows-shortcut-organizer scan/classify/organize pipeline, ClearWinStart preview/dry-run, current `chkPreviewMode`.
-  Touches: `Refresh-Items`, action functions, preview log, optional plan JSON export/import.
-  Acceptance: Bulk actions can generate an operation plan, show counts and before/after paths, export/import JSON, and execute the exact reviewed plan.
-  Complexity: L
-
 - [ ] P1 - Move scan and bulk actions off the UI thread
   Why: Recursive scans and bulk moves/deletes run from WPF event handlers and can freeze the window on large menus.
   Evidence: `StartMenuOrganizerPro.ps1:1106`, `StartMenuOrganizerPro.ps1:2254` through `StartMenuOrganizerPro.ps1:2265`, PowerShell stack async GUI convention.

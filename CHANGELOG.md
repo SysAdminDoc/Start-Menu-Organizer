@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.4.0 - 2026-06-28
+
+- Added editable transaction plans generated from Preview Mode for bulk delete, cleanup, move, organize, flatten, and rename actions.
+- Added plan summaries with operation counts and before/after paths in the activity log.
+- Added JSON plan export/import plus Execute/Clear controls that run the exact loaded plan through the guarded journaled operation path.
+- Added operation-plan regression coverage for JSON round-trip and mixed delete/move/rename execution.
+
 ## v0.3.0 - 2026-06-28
 
 - Centralized destructive delete, move, and rename operations behind one guarded file-operation helper.

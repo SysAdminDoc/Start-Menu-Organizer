@@ -27,7 +27,7 @@
 # ============================================================================
 
 $script:Config = @{
-    Version         = "0.3.0"
+    Version         = "0.4.0"
     UserStartMenu   = [Environment]::GetFolderPath('StartMenu') + '\Programs'
     SystemStartMenu = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs"
     BackupRoot      = "$env:LOCALAPPDATA\StartMenuOrganizerPro\Backups"
@@ -777,12 +777,39 @@ $script:WScriptShell = New-Object -ComObject WScript.Shell
                                     <TextBlock Text="Replace:" Foreground="{StaticResource TextMuted}" 
                                                Padding="12,10" IsHitTestVisible="False" Grid.Row="1"
                                                x:Name="txtReplacePlaceholder"/>
-                                    <Button x:Name="btnFindReplace" Grid.Row="2" Content="Find &amp; Replace in Names" 
+                                    <Button x:Name="btnFindReplace" Grid.Row="2" Content="Find &amp; Replace in Names"
                                             Style="{StaticResource SecondaryButton}"/>
                                 </Grid>
-                                
+
+                                <!-- Transaction Plan Section -->
+                                <TextBlock Text="TRANSACTION PLAN" FontSize="11" FontWeight="Bold"
+                                           Foreground="{StaticResource TextMuted}" Margin="0,15,0,10"/>
+                                <TextBlock x:Name="txtPlanStatus" Text="No plan loaded"
+                                           Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap"
+                                           Margin="0,0,0,8"/>
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button x:Name="btnExportPlan" Grid.Column="0" Content="Export Plan"
+                                            Style="{StaticResource SecondaryButton}" Margin="0,0,4,8" IsEnabled="False"/>
+                                    <Button x:Name="btnImportPlan" Grid.Column="1" Content="Import Plan"
+                                            Style="{StaticResource SecondaryButton}" Margin="4,0,0,8"/>
+                                </Grid>
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button x:Name="btnExecutePlan" Grid.Column="0" Content="Execute Plan"
+                                            Style="{StaticResource ModernButton}" Margin="0,0,4,0" IsEnabled="False"/>
+                                    <Button x:Name="btnClearPlan" Grid.Column="1" Content="Clear Plan"
+                                            Style="{StaticResource SecondaryButton}" Margin="4,0,0,0" IsEnabled="False"/>
+                                </Grid>
+
                                 <!-- Quick Open Section -->
-                                <TextBlock Text="QUICK OPEN" FontSize="11" FontWeight="Bold" 
+                                <TextBlock Text="QUICK OPEN" FontSize="11" FontWeight="Bold"
                                            Foreground="{StaticResource TextMuted}" Margin="0,15,0,10"/>
                                 
                                 <StackPanel Orientation="Horizontal">
@@ -923,6 +950,7 @@ $XAML.SelectNodes("//*[@*[contains(translate(name(.),'n','N'),'Name')]]") | ForE
 $script:AllItems = [System.Collections.Generic.List[PSObject]]::new()
 $script:FilteredItems = [System.Collections.ObjectModel.ObservableCollection[PSObject]]::new()
 $dgItems.ItemsSource = $script:FilteredItems
+$script:CurrentOperationPlan = $null
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -1159,6 +1187,13 @@ function Invoke-GuardedFileOperation {
             $result.Result = 'Preview'
             $result.Message = 'Preview only; no filesystem change was made.'
             return [PSCustomObject]$result
+        }
+
+        if ($Action -eq 'Move') {
+            $destinationParent = Split-Path $DestinationPath -Parent
+            if (-not (Test-Path -LiteralPath $destinationParent)) {
+                [System.IO.Directory]::CreateDirectory($destinationParent) | Out-Null
+            }
         }
 
         if ($RegisterRollback) {
@@ -1407,6 +1442,193 @@ function Invoke-Undo {
     Refresh-Items
 }
 
+function New-PlanOperation {
+    param(
+        [ValidateSet('Delete','Move','Rename')]
+        [string]$Action,
+        [string]$SourcePath,
+        [string]$DestinationPath = $null,
+        [string]$NewName = $null,
+        [string]$DisplayName = $null
+    )
+
+    return [PSCustomObject]@{
+        Action = $Action
+        SourcePath = $SourcePath
+        DestinationPath = $DestinationPath
+        NewName = $NewName
+        DisplayName = $DisplayName
+        CreatedAt = (Get-Date).ToString('o')
+    }
+}
+
+function Set-CurrentOperationPlan {
+    param(
+        [string]$Name,
+        [array]$Operations
+    )
+
+    $planOperations = @($Operations | Where-Object { $_ })
+    $script:CurrentOperationPlan = [PSCustomObject]@{
+        PlanId = [System.Guid]::NewGuid().ToString('N')
+        Name = $Name
+        CreatedAt = (Get-Date).ToString('o')
+        Version = $Config.Version
+        Operations = $planOperations
+        Counts = @{}
+    }
+
+    foreach ($group in ($planOperations | Group-Object Action)) {
+        $script:CurrentOperationPlan.Counts[$group.Name] = $group.Count
+    }
+
+    Update-PlanStatus
+    Show-OperationPlanSummary -Plan $script:CurrentOperationPlan
+}
+
+function Update-PlanStatus {
+    if (-not $txtPlanStatus) { return }
+
+    if ($script:CurrentOperationPlan -and @($script:CurrentOperationPlan.Operations).Count -gt 0) {
+        $count = @($script:CurrentOperationPlan.Operations).Count
+        $txtPlanStatus.Text = "$($script:CurrentOperationPlan.Name) - $count operation(s) loaded"
+        $btnExportPlan.IsEnabled = $true
+        $btnExecutePlan.IsEnabled = $true
+        $btnClearPlan.IsEnabled = $true
+    }
+    else {
+        $txtPlanStatus.Text = "No plan loaded"
+        $btnExportPlan.IsEnabled = $false
+        $btnExecutePlan.IsEnabled = $false
+        $btnClearPlan.IsEnabled = $false
+    }
+}
+
+function Show-OperationPlanSummary {
+    param($Plan)
+
+    $operations = @($Plan.Operations)
+    Write-Log "PLAN: $($Plan.Name) - $($operations.Count) operation(s)" 'Warning'
+    foreach ($group in ($operations | Group-Object Action)) {
+        Write-Log "  $($group.Name): $($group.Count)" 'Info'
+    }
+
+    foreach ($operation in ($operations | Select-Object -First 20)) {
+        $after = if ($operation.Action -eq 'Rename') { $operation.NewName } else { $operation.DestinationPath }
+        if ([string]::IsNullOrWhiteSpace($after)) { $after = '(none)' }
+        Write-Log "  $($operation.Action): $($operation.SourcePath) -> $after" 'Info'
+    }
+
+    if ($operations.Count -gt 20) {
+        Write-Log "  ... and $($operations.Count - 20) more" 'Info'
+    }
+}
+
+function Export-CurrentOperationPlan {
+    if (-not $script:CurrentOperationPlan) {
+        [System.Windows.MessageBox]::Show("No operation plan is loaded.", "Info", "OK", "Information")
+        return
+    }
+
+    $saveDialog = [System.Windows.Forms.SaveFileDialog]::new()
+    $saveDialog.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
+    $saveDialog.FileName = "StartMenuOperationPlan.json"
+
+    if ($saveDialog.ShowDialog() -eq 'OK') {
+        $json = $script:CurrentOperationPlan | ConvertTo-Json -Depth 8
+        [System.IO.File]::WriteAllText($saveDialog.FileName, $json, [System.Text.UTF8Encoding]::new($false))
+        Write-Log "Operation plan exported: $($saveDialog.FileName)" 'Success'
+    }
+}
+
+function Import-OperationPlan {
+    $openDialog = [System.Windows.Forms.OpenFileDialog]::new()
+    $openDialog.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
+
+    if ($openDialog.ShowDialog() -eq 'OK') {
+        try {
+            $plan = Get-Content -LiteralPath $openDialog.FileName -Raw | ConvertFrom-Json
+            $operations = @($plan.Operations)
+            foreach ($operation in $operations) {
+                if ($operation.Action -notin @('Delete','Move','Rename')) {
+                    throw "Unsupported operation action: $($operation.Action)"
+                }
+                if ([string]::IsNullOrWhiteSpace($operation.SourcePath)) {
+                    throw "Operation is missing SourcePath."
+                }
+            }
+
+            $script:CurrentOperationPlan = $plan
+            Update-PlanStatus
+            Show-OperationPlanSummary -Plan $script:CurrentOperationPlan
+            Write-Log "Operation plan imported: $($openDialog.FileName)" 'Success'
+        }
+        catch {
+            Write-Log "Failed to import operation plan: $_" 'Error'
+            [System.Windows.MessageBox]::Show("Failed to import operation plan: $_", "Error", "OK", "Error")
+        }
+    }
+}
+
+function Clear-OperationPlan {
+    $script:CurrentOperationPlan = $null
+    Update-PlanStatus
+    Write-Log "Operation plan cleared." 'Info'
+}
+
+function Invoke-CurrentOperationPlan {
+    if (-not $script:CurrentOperationPlan) {
+        [System.Windows.MessageBox]::Show("No operation plan is loaded.", "Info", "OK", "Information")
+        return
+    }
+
+    $operations = @($script:CurrentOperationPlan.Operations)
+    if ($operations.Count -eq 0) {
+        [System.Windows.MessageBox]::Show("The operation plan is empty.", "Info", "OK", "Information")
+        return
+    }
+
+    $operationId = New-OperationId
+    $journalItems = @()
+    $succeeded = 0
+    $failed = 0
+
+    Show-Progress -Value 0 -Maximum $operations.Count
+    for ($i = 0; $i -lt $operations.Count; $i++) {
+        $operation = $operations[$i]
+        Show-Progress -Value ($i + 1) -Maximum $operations.Count
+
+        try {
+            switch ($operation.Action) {
+                'Delete' {
+                    $journalItems += Invoke-JournaledDelete -Path $operation.SourcePath -OperationId $operationId
+                }
+                'Move' {
+                    $journalItems += Invoke-JournaledMove -SourcePath $operation.SourcePath -DestinationPath $operation.DestinationPath -OperationId $operationId
+                }
+                'Rename' {
+                    $journalItems += Invoke-JournaledRename -SourcePath $operation.SourcePath -NewName $operation.NewName -OperationId $operationId
+                }
+            }
+            $succeeded++
+        }
+        catch {
+            $failed++
+            $journalItems += New-JournalItem -ActionType $operation.Action -OriginalPath $operation.SourcePath -NewPath $operation.DestinationPath -Result 'Failed' -Message $_.Exception.Message
+            Write-Log "Plan operation failed: $($operation.Action) $($operation.SourcePath) - $($_.Exception.Message)" 'Error'
+        }
+    }
+
+    if ($journalItems.Count -gt 0) {
+        Add-JournalEntry -Type 'Plan' -Description "Execute plan: $($script:CurrentOperationPlan.Name)" -Items $journalItems -OperationId $operationId
+    }
+
+    Show-Progress -Visible $false
+    Write-Log "Operation plan executed: $succeeded succeeded, $failed failed" 'Info'
+    Clear-OperationPlan
+    Refresh-Items
+}
+
 function Refresh-Items {
     $script:AllItems.Clear()
     $script:FilteredItems.Clear()
@@ -1605,6 +1827,10 @@ function Delete-SelectedItems {
     $isPreview = $chkPreviewMode.IsChecked
     
     if ($isPreview) {
+        $operations = @($selected | ForEach-Object {
+            New-PlanOperation -Action 'Delete' -SourcePath $_.FullPath -DisplayName $_.DisplayName
+        })
+        Set-CurrentOperationPlan -Name "Delete selected items" -Operations $operations
         Write-Log "PREVIEW: Would delete $($selected.Count) item(s):" 'Warning'
         foreach ($item in $selected) {
             Write-Log "  - $($item.DisplayName) ($($item.RelativePath))" 'Info'
@@ -1670,6 +1896,10 @@ function Remove-AllJunk {
     }
     
     if ($isPreview) {
+        $operations = @($junkItems | ForEach-Object {
+            New-PlanOperation -Action 'Delete' -SourcePath $_.FullPath -DisplayName $_.DisplayName
+        })
+        Set-CurrentOperationPlan -Name "Remove all junk" -Operations $operations
         Write-Log "PREVIEW: Would delete $($junkItems.Count) junk item(s):" 'Warning'
         foreach ($item in $junkItems | Select-Object -First 20) {
             Write-Log "  - $($item.DisplayName)" 'Info'
@@ -1702,6 +1932,10 @@ function Remove-BrokenShortcuts {
     }
     
     if ($isPreview) {
+        $operations = @($brokenItems | ForEach-Object {
+            New-PlanOperation -Action 'Delete' -SourcePath $_.FullPath -DisplayName $_.DisplayName
+        })
+        Set-CurrentOperationPlan -Name "Remove broken shortcuts" -Operations $operations
         Write-Log "PREVIEW: Would delete $($brokenItems.Count) broken shortcut(s):" 'Warning'
         foreach ($item in $brokenItems) {
             Write-Log "  - $($item.DisplayName) -> $($item.TargetPath)" 'Info'
@@ -1742,6 +1976,10 @@ function Remove-Duplicates {
     }
     
     if ($isPreview) {
+        $operations = @($toDelete | ForEach-Object {
+            New-PlanOperation -Action 'Delete' -SourcePath $_.FullPath -DisplayName $_.DisplayName
+        })
+        Set-CurrentOperationPlan -Name "Remove duplicates" -Operations $operations
         Write-Log "PREVIEW: Would delete $($toDelete.Count) duplicate(s), keeping 1 of each:" 'Warning'
         foreach ($item in $toDelete) {
             Write-Log "  - $($item.DisplayName) ($($item.RelativePath))" 'Info'
@@ -1796,6 +2034,16 @@ function Flatten-SingleItemFolders {
     }
     
     if ($isPreview) {
+        $operations = @()
+        foreach ($item in $toFlatten) {
+            $destPath = Join-Path $item.BasePath $item.Shortcut.Name
+            if (Test-Path $destPath) {
+                $destPath = Join-Path $item.BasePath "$($item.Folder.Name) - $($item.Shortcut.Name)"
+            }
+            $operations += New-PlanOperation -Action 'Move' -SourcePath $item.Shortcut.FullName -DestinationPath $destPath -DisplayName $item.Shortcut.Name
+            $operations += New-PlanOperation -Action 'Delete' -SourcePath $item.Folder.FullName -DisplayName $item.Folder.Name
+        }
+        Set-CurrentOperationPlan -Name "Flatten single-item folders" -Operations $operations
         Write-Log "PREVIEW: Would flatten $($toFlatten.Count) folder(s):" 'Warning'
         foreach ($item in $toFlatten) {
             Write-Log "  - $($item.Folder.Name) -> $($item.Shortcut.Name)" 'Info'
@@ -1867,6 +2115,10 @@ function Remove-EmptyFolders {
     }
     
     if ($isPreview) {
+        $operations = @($emptyFolders | ForEach-Object {
+            New-PlanOperation -Action 'Delete' -SourcePath $_.FullName -DisplayName $_.Name
+        })
+        Set-CurrentOperationPlan -Name "Remove empty folders" -Operations $operations
         Write-Log "PREVIEW: Would remove $($emptyFolders.Count) empty folder(s):" 'Warning'
         foreach ($folder in $emptyFolders) {
             Write-Log "  - $($folder.Name)" 'Info'
@@ -1925,6 +2177,29 @@ function Move-AllToRoot {
     }
     
     if ($isPreview) {
+        $operations = @()
+        foreach ($entry in $toMove) {
+            $destPath = Join-Path $entry.BasePath $entry.Item.Name
+            if (Test-Path $destPath) {
+                $existingTarget = Get-ShortcutTarget $destPath
+                $newTarget = Get-ShortcutTarget $entry.Item.FullName
+                if ($existingTarget -eq $newTarget) {
+                    $operations += New-PlanOperation -Action 'Delete' -SourcePath $entry.Item.FullName -DisplayName $entry.Item.BaseName
+                    continue
+                }
+
+                $baseName = [System.IO.Path]::GetFileNameWithoutExtension($entry.Item.Name)
+                $ext = [System.IO.Path]::GetExtension($entry.Item.Name)
+                $counter = 2
+                do {
+                    $destPath = Join-Path $entry.BasePath "$baseName ($counter)$ext"
+                    $counter++
+                } while (Test-Path $destPath)
+            }
+
+            $operations += New-PlanOperation -Action 'Move' -SourcePath $entry.Item.FullName -DestinationPath $destPath -DisplayName $entry.Item.BaseName
+        }
+        Set-CurrentOperationPlan -Name "Move all to root" -Operations $operations
         Write-Log "PREVIEW: Would move $($toMove.Count) shortcut(s) to root:" 'Warning'
         foreach ($entry in $toMove | Select-Object -First 30) {
             Write-Log "  - $($entry.Item.Name)" 'Info'
@@ -2015,6 +2290,12 @@ function Move-ToCategory {
     $isPreview = $chkPreviewMode.IsChecked
     
     if ($isPreview) {
+        $operations = @($selected | ForEach-Object {
+            $categoryPath = Join-Path $_.BasePath $CategoryName
+            $destPath = Join-Path $categoryPath (Split-Path $_.FullPath -Leaf)
+            New-PlanOperation -Action 'Move' -SourcePath $_.FullPath -DestinationPath $destPath -DisplayName $_.DisplayName
+        })
+        Set-CurrentOperationPlan -Name "Move to $CategoryName" -Operations $operations
         Write-Log "PREVIEW: Would move $($selected.Count) item(s) to '$CategoryName':" 'Warning'
         foreach ($item in $selected) {
             Write-Log "  - $($item.DisplayName)" 'Info'
@@ -2088,6 +2369,14 @@ function Auto-OrganizeAll {
     }
     
     if ($isPreview) {
+        $operations = @($toOrganize | ForEach-Object {
+            $categoryPath = Join-Path $_.BasePath $_.Category
+            $destPath = Join-Path $categoryPath $_.Item.Name
+            if (-not (Test-Path -LiteralPath $destPath)) {
+                New-PlanOperation -Action 'Move' -SourcePath $_.Item.FullName -DestinationPath $destPath -DisplayName $_.Item.BaseName
+            }
+        })
+        Set-CurrentOperationPlan -Name "Auto-organize all" -Operations $operations
         Write-Log "PREVIEW: Would organize $($toOrganize.Count) item(s):" 'Warning'
         $grouped = $toOrganize | Group-Object { $_.Category }
         foreach ($group in $grouped) {
@@ -2186,6 +2475,11 @@ function Strip-VersionNumbers {
     }
     
     if ($isPreview) {
+        $operations = @($toRename | ForEach-Object {
+            $ext = [System.IO.Path]::GetExtension($_.Item.FullPath)
+            New-PlanOperation -Action 'Rename' -SourcePath $_.Item.FullPath -NewName "$($_.NewName)$ext" -DisplayName $_.Item.DisplayName
+        })
+        Set-CurrentOperationPlan -Name "Strip version numbers" -Operations $operations
         Write-Log "PREVIEW: Would rename $($toRename.Count) item(s):" 'Warning'
         foreach ($entry in $toRename) {
             Write-Log "  - '$($entry.Item.DisplayName)' -> '$($entry.NewName)'" 'Info'
@@ -2270,6 +2564,11 @@ function Clean-Names {
     }
     
     if ($isPreview) {
+        $operations = @($toRename | ForEach-Object {
+            $ext = [System.IO.Path]::GetExtension($_.Item.FullPath)
+            New-PlanOperation -Action 'Rename' -SourcePath $_.Item.FullPath -NewName "$($_.NewName)$ext" -DisplayName $_.Item.DisplayName
+        })
+        Set-CurrentOperationPlan -Name "Clean names" -Operations $operations
         Write-Log "PREVIEW: Would clean $($toRename.Count) name(s):" 'Warning'
         foreach ($entry in $toRename) {
             Write-Log "  - '$($entry.Item.DisplayName)' -> '$($entry.NewName)'" 'Info'
@@ -2346,6 +2645,11 @@ function Find-Replace-Names {
     }
     
     if ($isPreview) {
+        $operations = @($toRename | ForEach-Object {
+            $ext = [System.IO.Path]::GetExtension($_.Item.FullPath)
+            New-PlanOperation -Action 'Rename' -SourcePath $_.Item.FullPath -NewName "$($_.NewName)$ext" -DisplayName $_.Item.DisplayName
+        })
+        Set-CurrentOperationPlan -Name "Find and replace names" -Operations $operations
         Write-Log "PREVIEW: Would rename $($toRename.Count) item(s):" 'Warning'
         foreach ($entry in $toRename) {
             Write-Log "  - '$($entry.Item.DisplayName)' -> '$($entry.NewName)'" 'Info'
@@ -2852,6 +3156,10 @@ $btnAutoOrganize.Add_Click({ Auto-OrganizeAll })
 $btnStripVersions.Add_Click({ Strip-VersionNumbers })
 $btnCleanNames.Add_Click({ Clean-Names })
 $btnFindReplace.Add_Click({ Find-Replace-Names })
+$btnExportPlan.Add_Click({ Export-CurrentOperationPlan })
+$btnImportPlan.Add_Click({ Import-OperationPlan })
+$btnExecutePlan.Add_Click({ Invoke-CurrentOperationPlan })
+$btnClearPlan.Add_Click({ Clear-OperationPlan })
 
 # Backup/Restore
 $btnBackup.Add_Click({ Create-Backup })

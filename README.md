@@ -2,7 +2,7 @@
 
 A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, remove duplicates, organize by category, and take full control of your Start Menu.
 
-![Version](https://img.shields.io/badge/Version-v0.3.0-blue)
+![Version](https://img.shields.io/badge/Version-v0.4.0-blue)
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-blue)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6)
 ![License](https://img.shields.io/badge/License-MIT-green)
@@ -49,6 +49,7 @@ A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, re
 - **Persistent Undo Support** (Ctrl+Z) - Recover reversible deletes, moves, renames, and restores from the saved operation journal
 - **Backup/Restore** - Create timestamped backups before making changes
 - **Fail-Closed Restore** - Validates backup contents in staging and preserves a pre-restore rollback snapshot before replacing live entries
+- **Editable Transaction Plans** - Preview bulk actions into JSON plans that can be reviewed, exported, imported, and executed exactly
 - **Preview Mode** - Dry-run any operation first
 - **Confirmation Dialogs** - No destructive action without explicit approval
 
@@ -184,6 +185,12 @@ Run the guarded file-operation regression test:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\GuardedFileOperation.Tests.ps1
+```
+
+Run the editable operation-plan regression test:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\OperationPlan.Tests.ps1
 ```
 
 ## Troubleshooting
