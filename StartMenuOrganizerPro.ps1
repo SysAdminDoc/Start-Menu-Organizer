@@ -27,7 +27,7 @@
 # ============================================================================
 
 $script:Config = @{
-    Version         = "0.8.0"
+    Version         = "0.9.0"
     SettingsSchema  = 1
     UserStartMenu   = [Environment]::GetFolderPath('StartMenu') + '\Programs'
     SystemStartMenu = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs"
@@ -3813,7 +3813,6 @@ $ctxSelectNone.Add_Click({
 $ctxOpenLocation.Add_Click({
     $selected = $dgItems.SelectedItem
     if ($selected) {
-        $folder = Split-Path $selected.FullPath -Parent
         Start-Process explorer.exe -ArgumentList "/select,`"$($selected.FullPath)`""
     }
 })
@@ -3868,8 +3867,9 @@ $dgItems.Add_SelectionChanged({ Update-SelectionCount })
 
 # Keyboard shortcuts
 $Window.Add_KeyDown({
-    param($sender, $e)
-    
+    param($source, $e)
+    $null = $source
+
     if ($e.Key -eq 'Delete') {
         Delete-SelectedItems
         $e.Handled = $true

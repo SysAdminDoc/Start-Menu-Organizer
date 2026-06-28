@@ -2,7 +2,7 @@
 
 A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, remove duplicates, organize by category, and take full control of your Start Menu.
 
-![Version](https://img.shields.io/badge/Version-v0.8.0-blue)
+![Version](https://img.shields.io/badge/Version-v0.9.0-blue)
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-blue)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6)
 ![License](https://img.shields.io/badge/License-MIT-green)
@@ -173,6 +173,12 @@ Save your customized patterns:
 | Config | `%LOCALAPPDATA%\StartMenuOrganizerPro\config.json` |
 
 ## Development
+
+Run the full local gate:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\Run-Tests.ps1
+```
 
 Run the local restore safety regression test:
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.9.0 - 2026-06-28
+
+- Added a unified local test gate that runs parser checks, disposable-fixture regression scripts, Pester, and PSScriptAnalyzer.
+- Added PSScriptAnalyzer settings with documented suppressions for WPF-local function naming and ShouldProcess noise.
+- Added Pester smoke coverage for parser and version badge alignment.
+- Fixed concrete analyzer findings for unused context-menu variables and automatic-variable event parameter naming.
+
 ## v0.8.0 - 2026-06-28
 
 - Added versioned settings persistence for scope, junk patterns, protected folders, and category patterns.

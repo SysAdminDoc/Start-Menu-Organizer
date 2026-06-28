@@ -2,13 +2,6 @@
 
 ## Research-Driven Additions
 
-- [ ] P1 - Add Pester and PSScriptAnalyzer test gates
-  Why: The repo has no tests for destructive operations and PSScriptAnalyzer already reports maintainability findings.
-  Evidence: local parser pass, PSScriptAnalyzer 1.25.0 findings, Pester project.
-  Touches: new tests, test fixtures, README test instructions, analyzer settings.
-  Acceptance: Local test command creates disposable Start Menu fixtures, covers delete/undo/restore/flatten/rename/config paths, and analyzer warnings are either fixed or intentionally suppressed with comments.
-  Complexity: L
-
 - [ ] P2 - Package an installable release artifact
   Why: Direct peers offer installers or executable builds while this repo only documents raw `.ps1` execution.
   Evidence: Start Menu Helper setup/Inno workflow, ExplorerPatcher architecture-specific setup, README installation section.
