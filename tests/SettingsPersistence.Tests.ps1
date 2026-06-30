@@ -50,7 +50,8 @@ try {
         ConfigFile = Join-Path $testRoot 'config.json'
     }
     $script:IsLoadingConfiguration = $false
-    $cmbScope = [PSCustomObject]@{ SelectedIndex = 1 }
+    $cmbScope = [PSCustomObject]@{ SelectedIndex = 3 }
+    $txtProfileRoot = [PSCustomObject]@{ Text = (Join-Path $testRoot 'Profiles\Alice') }
     $script:JunkPatterns = [System.Collections.ObjectModel.ObservableCollection[string]]@('*junk*')
     $script:ProtectedFolders = [System.Collections.ObjectModel.ObservableCollection[string]]@('Startup')
     $script:Categories = [ordered]@{
@@ -63,14 +64,15 @@ try {
     }
 
     $saved = Get-Content -LiteralPath $script:Config.ConfigFile -Raw | ConvertFrom-Json
-    if ($saved.SchemaVersion -ne 1 -or $saved.ScopeIndex -ne 1) {
-        throw 'Failed: saved config schema or scope was incorrect.'
+    if ($saved.SchemaVersion -ne 1 -or $saved.ScopeIndex -ne 3 -or $saved.ProfileRoot -ne $txtProfileRoot.Text) {
+        throw 'Failed: saved config schema, scope, or profile root was incorrect.'
     }
 
     $script:JunkPatterns = [System.Collections.ObjectModel.ObservableCollection[string]]@('*changed*')
     $script:ProtectedFolders = [System.Collections.ObjectModel.ObservableCollection[string]]@('Changed')
     $script:Categories = [ordered]@{ Changed = @('Changed*') }
     $cmbScope.SelectedIndex = 0
+    $txtProfileRoot.Text = ''
 
     Load-ApplicationConfiguration
     if ($script:JunkPatterns[0] -ne '*junk*') {
@@ -82,8 +84,11 @@ try {
     if (-not $script:Categories.Contains('Utilities')) {
         throw 'Failed: categories were not loaded.'
     }
-    if ($cmbScope.SelectedIndex -ne 1) {
+    if ($cmbScope.SelectedIndex -ne 3) {
         throw 'Failed: saved scope was not loaded.'
+    }
+    if ($txtProfileRoot.Text -ne (Join-Path $testRoot 'Profiles\Alice')) {
+        throw 'Failed: saved profile root was not loaded.'
     }
 
     Set-Content -LiteralPath $script:Config.ConfigFile -Value '{ invalid json'

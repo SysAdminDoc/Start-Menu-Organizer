@@ -10,13 +10,13 @@ $defaultOutputRoot = Join-Path $repoRoot 'dist'
 try {
     $result = & $buildScript -OutputRoot $outputRoot
 
-    if ($result.Version -ne '0.12.0') {
+    if ($result.Version -ne '0.13.0') {
         throw "Failed: package version was $($result.Version)."
     }
     if (-not (Test-Path -LiteralPath $result.Artifact)) {
         throw "Failed: package artifact was not created: $($result.Artifact)"
     }
-    if ((Split-Path $result.Artifact -Leaf) -ne 'StartMenuOrganizer-v0.12.0.zip') {
+    if ((Split-Path $result.Artifact -Leaf) -ne 'StartMenuOrganizer-v0.13.0.zip') {
         throw "Failed: artifact filename was incorrect: $($result.Artifact)"
     }
     if ((Split-Path (Split-Path $result.Artifact -Parent) -Leaf) -ne (Split-Path $outputRoot -Leaf)) {

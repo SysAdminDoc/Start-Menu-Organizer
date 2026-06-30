@@ -27,10 +27,12 @@
 # ============================================================================
 
 $script:Config = @{
-    Version         = "0.12.0"
+    Version         = "0.13.0"
     SettingsSchema  = 1
     UserStartMenu   = [Environment]::GetFolderPath('StartMenu') + '\Programs'
     SystemStartMenu = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs"
+    ProfileRoot     = ''
+    DefaultProfileRoot = "$env:SystemDrive\Users\Default"
     BackupRoot      = "$env:LOCALAPPDATA\StartMenuOrganizerPro\Backups"
     ConfigFile      = "$env:LOCALAPPDATA\StartMenuOrganizerPro\config.json"
     UndoFile        = "$env:LOCALAPPDATA\StartMenuOrganizerPro\undo.json"
@@ -628,6 +630,8 @@ $script:WScriptShell = New-Object -ComObject WScript.Shell
                                     <ComboBoxItem x:Name="cmbScopeUser" Content="User Start Menu"/>
                                     <ComboBoxItem x:Name="cmbScopeSystem" Content="System Start Menu"/>
                                     <ComboBoxItem x:Name="cmbScopeBoth" Content="Both" IsSelected="True"/>
+                                    <ComboBoxItem x:Name="cmbScopeProfile" Content="Selected Profile"/>
+                                    <ComboBoxItem x:Name="cmbScopeDefaultUser" Content="Default User"/>
                                 </ComboBox>
                                 <Button x:Name="btnRefresh" Content="Refresh" Style="{StaticResource SmallButton}" 
                                         Margin="10,0,0,0" ToolTip="F5"/>
@@ -897,6 +901,24 @@ $script:WScriptShell = New-Object -ComObject WScript.Shell
                                     <Button x:Name="btnResetConfig" Content="Reset to Defaults" 
                                             Style="{StaticResource SecondaryButton}"/>
                                 </StackPanel>
+
+                                <!-- Profile Target -->
+                                <TextBlock x:Name="txtProfileTargetHeader" Text="PROFILE TARGET" FontSize="11" FontWeight="Bold"
+                                           Foreground="{StaticResource TextMuted}" Margin="0,15,0,10"/>
+                                <TextBlock x:Name="txtProfileTargetHint"
+                                           Text="Choose a local or offline Windows profile root. Selected/default profile changes require Administrator rights."
+                                           Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="txtProfileRoot"/>
+                                    <Button x:Name="btnBrowseProfileRoot" Grid.Column="1" Content="Browse"
+                                            Style="{StaticResource SmallButton}" Margin="5,0,0,0"/>
+                                </Grid>
+                                <Button x:Name="btnUseDefaultProfileRoot" Content="Use Default User Profile"
+                                        Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left"/>
                             </StackPanel>
                         </ScrollViewer>
                     </TabItem>
@@ -988,6 +1010,8 @@ $script:DefaultUiStrings = [ordered]@{
     'cmbScopeUser.Content' = 'User Start Menu'
     'cmbScopeSystem.Content' = 'System Start Menu'
     'cmbScopeBoth.Content' = 'Both'
+    'cmbScopeProfile.Content' = 'Selected Profile'
+    'cmbScopeDefaultUser.Content' = 'Default User'
     'btnRefresh.Content' = 'Refresh'
     'btnRefresh.ToolTip' = 'Refresh the Start Menu scan'
     'lblSort.Text' = 'Sort:'
@@ -1074,6 +1098,10 @@ $script:DefaultUiStrings = [ordered]@{
     'btnExportConfig.Content' = 'Export Config'
     'btnImportConfig.Content' = 'Import Config'
     'btnResetConfig.Content' = 'Reset to Defaults'
+    'txtProfileTargetHeader.Text' = 'PROFILE TARGET'
+    'txtProfileTargetHint.Text' = 'Choose a local or offline Windows profile root. Selected/default profile changes require Administrator rights.'
+    'btnBrowseProfileRoot.Content' = 'Browse'
+    'btnUseDefaultProfileRoot.Content' = 'Use Default User Profile'
     'tabLog.Header' = 'Log'
     'btnClearLog.Content' = 'Clear Log'
     'Status.AdminFullAccess' = 'Running as Administrator - Full access to User and System Start Menu'
@@ -1089,7 +1117,7 @@ $script:DefaultUiStrings = [ordered]@{
     'btnRestore.AutomationName' = 'Restore backup'
     'btnRestore.HelpText' = 'Restores a previous Start Menu backup after staging and validation.'
     'cmbScope.AutomationName' = 'Start Menu scope'
-    'cmbScope.HelpText' = 'Selects whether scans target the user Start Menu, system Start Menu, or both.'
+    'cmbScope.HelpText' = 'Selects whether scans target the user Start Menu, system Start Menu, both, a selected profile, or the default user profile.'
     'btnRefresh.AutomationName' = 'Refresh items'
     'btnRefresh.HelpText' = 'Scans the selected Start Menu scope again.'
     'cmbSort.AutomationName' = 'Sort items'
@@ -1132,6 +1160,12 @@ $script:DefaultUiStrings = [ordered]@{
     'btnExportConfig.AutomationName' = 'Export configuration'
     'btnImportConfig.AutomationName' = 'Import configuration'
     'btnResetConfig.AutomationName' = 'Reset configuration to defaults'
+    'txtProfileRoot.AutomationName' = 'Profile root'
+    'txtProfileRoot.HelpText' = 'Local or offline Windows profile root. The app resolves its Start Menu Programs folder after validation.'
+    'btnBrowseProfileRoot.AutomationName' = 'Browse for profile root'
+    'btnBrowseProfileRoot.HelpText' = 'Select a local or offline Windows profile folder.'
+    'btnUseDefaultProfileRoot.AutomationName' = 'Use default user profile'
+    'btnUseDefaultProfileRoot.HelpText' = 'Fills the profile root field with the Windows Default user profile path.'
     'txtLog.AutomationName' = 'Activity log'
     'txtLog.HelpText' = 'Shows session activity; persistent logs are written to the local app data logs folder.'
     'btnClearLog.AutomationName' = 'Clear activity log'
@@ -1193,6 +1227,9 @@ $script:UiTabOrder = @(
     'btnExportConfig',
     'btnImportConfig',
     'btnResetConfig',
+    'txtProfileRoot',
+    'btnBrowseProfileRoot',
+    'btnUseDefaultProfileRoot',
     'btnClearLog'
 )
 $script:ThemeContrastPairs = @(
@@ -1750,14 +1787,170 @@ function Stop-BackgroundWorker {
     }
 }
 
+function Get-DefaultUserProfileRoot {
+    if (-not [string]::IsNullOrWhiteSpace($Config.DefaultProfileRoot)) {
+        return $Config.DefaultProfileRoot
+    }
+
+    return (Join-Path $env:SystemDrive 'Users\Default')
+}
+
+function Get-ProfileProgramsPath {
+    param([string]$ProfileRootOrProgramsPath)
+
+    if ([string]::IsNullOrWhiteSpace($ProfileRootOrProgramsPath)) {
+        throw "Profile root is required."
+    }
+
+    $candidate = Get-NormalizedPath ([Environment]::ExpandEnvironmentVariables($ProfileRootOrProgramsPath.Trim()))
+    if (-not [System.IO.Path]::IsPathRooted($candidate)) {
+        throw "Profile path must be an absolute local path: $ProfileRootOrProgramsPath"
+    }
+
+    $programsSuffix = 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs'
+    if ($candidate.EndsWith($programsSuffix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        $profileRoot = $candidate.Substring(0, $candidate.Length - $programsSuffix.Length).TrimEnd('\', '/')
+        $programsPath = $candidate
+    }
+    else {
+        $profileRoot = $candidate
+        $programsPath = Join-Path $profileRoot $programsSuffix
+    }
+
+    Test-ProfileTargetPath -ProfileRoot $profileRoot -ProgramsPath $programsPath | Out-Null
+
+    return [PSCustomObject]@{
+        ProfileRoot = $profileRoot
+        ProgramsPath = (Get-NormalizedPath $programsPath)
+    }
+}
+
+function Test-ProfileTargetPath {
+    param(
+        [string]$ProfileRoot,
+        [string]$ProgramsPath
+    )
+
+    $profileRootPath = Get-NormalizedPath $ProfileRoot
+    $programsRootPath = Get-NormalizedPath $ProgramsPath
+    $driveRoot = ([System.IO.Path]::GetPathRoot($profileRootPath)).TrimEnd('\', '/')
+
+    if ($profileRootPath -eq $driveRoot) {
+        throw "Profile root cannot be a drive root: $profileRootPath"
+    }
+    if (-not (Test-Path -LiteralPath $profileRootPath -PathType Container)) {
+        throw "Profile root does not exist: $profileRootPath"
+    }
+    if (-not (Test-PathWithinRoot -Path $programsRootPath -Root $profileRootPath)) {
+        throw "Profile Start Menu path must be inside the profile root: $programsRootPath"
+    }
+
+    $windowsRoot = if ($env:windir) { Get-NormalizedPath $env:windir } else { $null }
+    if ($windowsRoot -and (Test-PathWithinRoot -Path $profileRootPath -Root $windowsRoot)) {
+        throw "Profile root cannot be inside Windows: $profileRootPath"
+    }
+
+    $programDataRoot = if ($env:ProgramData) { Get-NormalizedPath $env:ProgramData } else { $null }
+    if ($programDataRoot -and (Test-PathWithinRoot -Path $profileRootPath -Root $programDataRoot)) {
+        throw "Profile root cannot be inside ProgramData: $profileRootPath"
+    }
+
+    return $true
+}
+
+function New-StartMenuScope {
+    param(
+        [string]$ScopeName,
+        [string]$Path,
+        [string]$Prefix,
+        [bool]$RequiresAdmin = $false,
+        [string]$BackupName = $ScopeName,
+        [string]$ProfileRoot = $null
+    )
+
+    return [PSCustomObject]@{
+        ScopeName = $ScopeName
+        Path = (Get-NormalizedPath $Path)
+        Prefix = $Prefix
+        RequiresAdmin = $RequiresAdmin
+        BackupName = $BackupName
+        ProfileRoot = $ProfileRoot
+    }
+}
+
+function Get-ConfiguredProfileScope {
+    $profileTarget = Get-ProfileProgramsPath -ProfileRootOrProgramsPath $Config.ProfileRoot
+    return New-StartMenuScope -ScopeName 'Profile' -Path $profileTarget.ProgramsPath -Prefix '[Profile]' -RequiresAdmin $true -BackupName 'Profile' -ProfileRoot $profileTarget.ProfileRoot
+}
+
+function Get-DefaultUserScope {
+    $profileTarget = Get-ProfileProgramsPath -ProfileRootOrProgramsPath (Get-DefaultUserProfileRoot)
+    return New-StartMenuScope -ScopeName 'DefaultUser' -Path $profileTarget.ProgramsPath -Prefix '[Default]' -RequiresAdmin $true -BackupName 'DefaultUser' -ProfileRoot $profileTarget.ProfileRoot
+}
+
+function Get-StartMenuScopes {
+    $scope = if ($cmbScope) { $cmbScope.SelectedIndex } else { 2 }
+    $scopes = @()
+
+    if ($scope -eq 0 -or $scope -eq 2) {
+        $scopes += New-StartMenuScope -ScopeName 'User' -Path $Config.UserStartMenu -Prefix '[User]' -RequiresAdmin $false -BackupName 'User'
+    }
+    if ($scope -eq 1 -or $scope -eq 2) {
+        $scopes += New-StartMenuScope -ScopeName 'System' -Path $Config.SystemStartMenu -Prefix '[Sys]' -RequiresAdmin $true -BackupName 'System'
+    }
+    if ($scope -eq 3) {
+        $scopes += Get-ConfiguredProfileScope
+    }
+    if ($scope -eq 4) {
+        $scopes += Get-DefaultUserScope
+    }
+
+    return $scopes
+}
+
 function Get-StartMenuPaths {
-    $scope = $cmbScope.SelectedIndex
-    $paths = @()
-    
-    if ($scope -eq 0 -or $scope -eq 2) { $paths += $Config.UserStartMenu }
-    if ($scope -eq 1 -or $scope -eq 2) { $paths += $Config.SystemStartMenu }
-    
-    return $paths
+    return @((Get-StartMenuScopes) | ForEach-Object { $_.Path })
+}
+
+function Get-ApprovedMutationRoots {
+    $roots = @($Config.UserStartMenu, $Config.SystemStartMenu)
+
+    foreach ($scopeResolver in @({ Get-ConfiguredProfileScope }, { Get-DefaultUserScope })) {
+        try {
+            $scope = & $scopeResolver
+            if ($scope -and $scope.Path) {
+                $roots += $scope.Path
+            }
+        }
+        catch {
+            Write-Verbose "Skipping invalid mutation root: $($_.Exception.Message)"
+        }
+    }
+
+    return @($roots | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { Get-NormalizedPath $_ } | Select-Object -Unique)
+}
+
+function Test-MutationRootRequiresAdministrator {
+    param([string]$Root)
+
+    $rootPath = Get-NormalizedPath $Root
+    if ($rootPath -eq (Get-NormalizedPath $Config.SystemStartMenu)) {
+        return $true
+    }
+
+    foreach ($scopeResolver in @({ Get-ConfiguredProfileScope }, { Get-DefaultUserScope })) {
+        try {
+            $scope = & $scopeResolver
+            if ($scope -and $scope.RequiresAdmin -and $rootPath -eq (Get-NormalizedPath $scope.Path)) {
+                return $true
+            }
+        }
+        catch {
+            continue
+        }
+    }
+
+    return $false
 }
 
 function Get-ShortcutTarget {
@@ -1949,7 +2142,7 @@ function Invoke-GuardedFileOperation {
         [string]$SourcePath,
         [string]$DestinationPath = $null,
         [string]$NewName = $null,
-        [string[]]$AllowedRoots = @($Config.UserStartMenu, $Config.SystemStartMenu),
+        [string[]]$AllowedRoots = (Get-ApprovedMutationRoots),
         [ValidateSet('Fail','Overwrite')]
         [string]$CollisionPolicy = 'Fail',
         [bool]$Preview = $false,
@@ -1973,6 +2166,9 @@ function Invoke-GuardedFileOperation {
         $sourceRoot = Get-ApprovedMutationRoot -Path $SourcePath -AllowedRoots $AllowedRoots
         if (-not $sourceRoot) {
             throw "Source path is outside approved roots: $SourcePath"
+        }
+        if ((Test-MutationRootRequiresAdministrator -Root $sourceRoot) -and -not $script:IsAdmin) {
+            throw "Administrator privileges required for this Start Menu target: $sourceRoot"
         }
         if (Test-ProtectedFolder -Path $SourcePath -BasePath $sourceRoot) {
             throw "Source path is protected: $SourcePath"
@@ -2560,17 +2756,25 @@ function Invoke-CurrentOperationPlan {
 }
 
 function Refresh-Items {
-    $paths = @(Get-StartMenuPaths)
+    try {
+        $scopes = @(Get-StartMenuScopes)
+    }
+    catch {
+        Write-Log "Unable to resolve Start Menu scope: $($_.Exception.Message)" 'Error'
+        Update-Status "Scope is not valid"
+        [System.Windows.MessageBox]::Show("Unable to resolve Start Menu scope:`n`n$($_.Exception.Message)", "Invalid Scope", "OK", "Error")
+        return
+    }
+    if (($scopes | Where-Object { $_.RequiresAdmin }).Count -gt 0 -and -not $script:IsAdmin) {
+        Write-Log "Selected scope can be scanned, but changes require Administrator rights." 'Warning'
+    }
+
     $junkPatterns = @($script:JunkPatterns)
     $protectedFolders = @($script:ProtectedFolders)
-    $userStartMenu = $Config.UserStartMenu
-    $systemStartMenu = $Config.SystemStartMenu
 
     $scanScript = {
         param(
-            [string[]]$Paths,
-            [string]$UserStartMenu,
-            [string]$SystemStartMenu,
+            [object[]]$Scopes,
             [string[]]$JunkPatterns,
             [string[]]$ProtectedFolders
         )
@@ -2668,11 +2872,13 @@ function Refresh-Items {
         $shell = New-Object -ComObject WScript.Shell
 
         try {
-            foreach ($basePath in $Paths) {
+            foreach ($scope in $Scopes) {
+                $basePath = $scope.Path
                 if (-not (Test-Path -LiteralPath $basePath)) { continue }
 
-                $isSystem = $basePath -eq $SystemStartMenu
-                $prefix = if ($isSystem) { "[Sys]" } else { "[User]" }
+                $prefix = $scope.Prefix
+                $requiresAdmin = [bool]$scope.RequiresAdmin
+                $scopeName = $scope.ScopeName
 
                 Get-ChildItem -LiteralPath $basePath -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
                     $relativePath = $_.FullName.Substring($basePath.Length + 1)
@@ -2724,7 +2930,9 @@ function Refresh-Items {
                         ItemType     = $itemType
                         TargetPath   = $targetPath
                         Status       = 'OK'
-                        IsSystem     = $isSystem
+                        IsSystem     = $requiresAdmin
+                        RequiresAdmin = $requiresAdmin
+                        ScopeName    = $scopeName
                     }
                     $items.Add($item)
                 }
@@ -2777,7 +2985,7 @@ function Refresh-Items {
     }
 
     Show-Progress -Value 0 -Maximum 100
-    Start-BackgroundWorker -Name "Scanning Start Menu..." -ScriptBlock $scanScript -Arguments @($paths, $userStartMenu, $systemStartMenu, $junkPatterns, $protectedFolders) -OnCompleted $completed | Out-Null
+    Start-BackgroundWorker -Name "Scanning Start Menu..." -ScriptBlock $scanScript -Arguments @($scopes, $junkPatterns, $protectedFolders) -OnCompleted $completed | Out-Null
 }
 
 function Apply-Filters {
@@ -2857,14 +3065,28 @@ function Create-Backup {
 
     [System.IO.Directory]::CreateDirectory($backupPath) | Out-Null
 
-    $paths = Get-StartMenuPaths
+    try {
+        $scopes = @(Get-StartMenuScopes)
+    }
+    catch {
+        Write-Log "Backup failed before start: $($_.Exception.Message)" 'Error'
+        [System.Windows.MessageBox]::Show("Unable to resolve backup scope:`n`n$($_.Exception.Message)", "Backup Error", "OK", "Error")
+        return $null
+    }
+
     $i = 0
     $failed = @()
-    foreach ($path in $paths) {
+    foreach ($scope in $scopes) {
+        $path = $scope.Path
+        if ($scope.RequiresAdmin -and -not $script:IsAdmin) {
+            $failed += "$($scope.BackupName): Administrator privileges required"
+            Write-Log "Backup skipped for $($scope.ScopeName) Start Menu because the app is not elevated." 'Warning'
+            continue
+        }
         if (Test-Path -LiteralPath $path) {
-            $destName = if ($path -eq $Config.SystemStartMenu) { "System" } else { "User" }
+            $destName = $scope.BackupName
             $destPath = Join-Path $backupPath $destName
-            Show-Progress -Value ($i++ * 50) -Maximum 100
+            Show-Progress -Value ($i++ * [Math]::Max(1, [Math]::Floor(100 / [Math]::Max(1, $scopes.Count)))) -Maximum 100
             try {
                 Copy-Item -LiteralPath $path -Destination $destPath -Recurse -Force -ErrorAction Stop
             }
@@ -3081,12 +3303,12 @@ function Remove-Duplicates {
 
 function Flatten-SingleItemFolders {
     $isPreview = $chkPreviewMode.IsChecked
-    $paths = Get-StartMenuPaths
+    $scopes = Get-StartMenuScopes
     $toFlatten = @()
     
-    foreach ($basePath in $paths) {
-        $isSystem = $basePath -eq $Config.SystemStartMenu
-        if ($isSystem -and -not $script:IsAdmin) { continue }
+    foreach ($scope in $scopes) {
+        $basePath = $scope.Path
+        if ($scope.RequiresAdmin -and -not $script:IsAdmin) { continue }
 
         $folders = Get-ChildItem -Path $basePath -Directory -ErrorAction SilentlyContinue
 
@@ -3172,12 +3394,12 @@ function Flatten-SingleItemFolders {
 
 function Remove-EmptyFolders {
     $isPreview = $chkPreviewMode.IsChecked
-    $paths = Get-StartMenuPaths
+    $scopes = Get-StartMenuScopes
     $emptyFolders = @()
     
-    foreach ($basePath in $paths) {
-        $isSystem = $basePath -eq $Config.SystemStartMenu
-        if ($isSystem -and -not $script:IsAdmin) { continue }
+    foreach ($scope in $scopes) {
+        $basePath = $scope.Path
+        if ($scope.RequiresAdmin -and -not $script:IsAdmin) { continue }
         
         $folders = Get-ChildItem -Path $basePath -Directory -Recurse -ErrorAction SilentlyContinue | 
                    Sort-Object { $_.FullName.Length } -Descending
@@ -3237,12 +3459,12 @@ function Remove-EmptyFolders {
 
 function Move-AllToRoot {
     $isPreview = $chkPreviewMode.IsChecked
-    $paths = Get-StartMenuPaths
+    $scopes = Get-StartMenuScopes
     $toMove = @()
     
-    foreach ($basePath in $paths) {
-        $isSystem = $basePath -eq $Config.SystemStartMenu
-        if ($isSystem -and -not $script:IsAdmin) { continue }
+    foreach ($scope in $scopes) {
+        $basePath = $scope.Path
+        if ($scope.RequiresAdmin -and -not $script:IsAdmin) { continue }
         
         # Get all shortcuts that are NOT in the root directory
         Get-ChildItem -Path $basePath -Recurse -Filter "*.lnk" -ErrorAction SilentlyContinue | ForEach-Object {
@@ -3256,7 +3478,7 @@ function Move-AllToRoot {
                 $toMove += @{
                     Item = $_
                     BasePath = $basePath
-                    IsSystem = $isSystem
+                    IsSystem = $scope.RequiresAdmin
                 }
             }
         }
@@ -3437,12 +3659,12 @@ function Move-ToCategory {
 
 function Auto-OrganizeAll {
     $isPreview = $chkPreviewMode.IsChecked
-    $paths = Get-StartMenuPaths
+    $scopes = Get-StartMenuScopes
     $toOrganize = @()
     
-    foreach ($basePath in $paths) {
-        $isSystem = $basePath -eq $Config.SystemStartMenu
-        if ($isSystem -and -not $script:IsAdmin) { continue }
+    foreach ($scope in $scopes) {
+        $basePath = $scope.Path
+        if ($scope.RequiresAdmin -and -not $script:IsAdmin) { continue }
         
         Get-ChildItem -Path $basePath -Recurse -Filter "*.lnk" -ErrorAction SilentlyContinue | ForEach-Object {
             if (Test-ProtectedFolder -Path $_.FullName -BasePath $basePath) {
@@ -3814,10 +4036,7 @@ function Test-ApprovedRestoreTarget {
     param([string]$Path)
 
     $candidate = Get-NormalizedPath $Path
-    $allowedTargets = @(
-        (Get-NormalizedPath $Config.UserStartMenu),
-        (Get-NormalizedPath $Config.SystemStartMenu)
-    )
+    $allowedTargets = @(Get-ApprovedMutationRoots)
 
     return $allowedTargets -contains $candidate
 }
@@ -3989,41 +4208,39 @@ function Restore-Backup {
         [System.IO.Directory]::CreateDirectory($rollbackRoot) | Out-Null
         [System.IO.Directory]::CreateDirectory($stagingRoot) | Out-Null
 
-        $userBackup = Join-Path $latestBackup.FullName "User"
-        $systemBackup = Join-Path $latestBackup.FullName "System"
-
         $plans = @()
         $skipped = @()
         $planFailures = @()
+        $scopes = @(Get-StartMenuScopes)
 
-        if (Test-Path -LiteralPath $userBackup) {
+        foreach ($scope in $scopes) {
+            $scopeBackup = Join-Path $latestBackup.FullName $scope.BackupName
+            if (-not (Test-Path -LiteralPath $scopeBackup)) {
+                $skipped += "$($scope.BackupName) backup folder was not present in $($latestBackup.Name)."
+                continue
+            }
+            if ($scope.RequiresAdmin -and -not $script:IsAdmin) {
+                $skipped += "$($scope.ScopeName) Start Menu skipped; run as Administrator to restore it."
+                Write-Log "Skipped $($scope.ScopeName) Start Menu restore because the app is not elevated." 'Warning'
+                continue
+            }
+
             try {
-                $plans += New-RestorePlan -ScopeName "User" -BackupPath $userBackup -TargetPath $Config.UserStartMenu -StagingRoot $stagingRoot -RollbackRoot $rollbackRoot
-                Write-Log "Prepared User Start Menu restore with rollback snapshot." 'Info'
+                $plans += New-RestorePlan -ScopeName $scope.ScopeName -BackupPath $scopeBackup -TargetPath $scope.Path -StagingRoot $stagingRoot -RollbackRoot $rollbackRoot
+                Write-Log "Prepared $($scope.ScopeName) Start Menu restore with rollback snapshot." 'Info'
             }
             catch {
-                $planFailures += "User: $($_.Exception.Message)"
-                Write-Log "User restore preparation failed: $($_.Exception.Message)" 'Error'
+                $planFailures += "$($scope.ScopeName): $($_.Exception.Message)"
+                Write-Log "$($scope.ScopeName) restore preparation failed: $($_.Exception.Message)" 'Error'
             }
-        }
-        else {
-            $skipped += "User backup folder was not present in $($latestBackup.Name)."
         }
 
-        if (Test-Path -LiteralPath $systemBackup) {
-            if ($script:IsAdmin) {
-                try {
-                    $plans += New-RestorePlan -ScopeName "System" -BackupPath $systemBackup -TargetPath $Config.SystemStartMenu -StagingRoot $stagingRoot -RollbackRoot $rollbackRoot
-                    Write-Log "Prepared System Start Menu restore with rollback snapshot." 'Info'
-                }
-                catch {
-                    $planFailures += "System: $($_.Exception.Message)"
-                    Write-Log "System restore preparation failed: $($_.Exception.Message)" 'Error'
-                }
-            }
-            else {
-                $skipped += "System Start Menu skipped; run as Administrator to restore it."
-                Write-Log "Skipped System Start Menu restore because the app is not elevated." 'Warning'
+        $legacyBackupNames = @('User', 'System')
+        foreach ($legacyBackupName in $legacyBackupNames) {
+            if ($scopes.BackupName -contains $legacyBackupName) { continue }
+            $legacyBackup = Join-Path $latestBackup.FullName $legacyBackupName
+            if (Test-Path -LiteralPath $legacyBackup) {
+                $skipped += "$legacyBackupName backup folder is present but is not selected in the current scope."
             }
         }
 
@@ -4085,6 +4302,7 @@ function Get-ConfigurationSnapshot {
         SchemaVersion = $Config.SettingsSchema
         SavedAt = (Get-Date).ToString('o')
         ScopeIndex = if ($cmbScope) { $cmbScope.SelectedIndex } else { 2 }
+        ProfileRoot = if ($txtProfileRoot) { $txtProfileRoot.Text.Trim() } else { $Config.ProfileRoot }
         JunkPatterns = @($script:JunkPatterns)
         ProtectedFolders = @($script:ProtectedFolders)
         Categories = $categorySnapshot
@@ -4137,8 +4355,14 @@ function Apply-ConfigurationSnapshot {
     try {
         if ($cmbScope -and $Snapshot.PSObject.Properties.Name -contains 'ScopeIndex') {
             $scopeIndex = [int]$Snapshot.ScopeIndex
-            if ($scopeIndex -ge 0 -and $scopeIndex -le 2) {
+            if ($scopeIndex -ge 0 -and $scopeIndex -le 4) {
                 $cmbScope.SelectedIndex = $scopeIndex
+            }
+        }
+        if ($Snapshot.PSObject.Properties.Name -contains 'ProfileRoot') {
+            $Config.ProfileRoot = [string]$Snapshot.ProfileRoot
+            if ($txtProfileRoot) {
+                $txtProfileRoot.Text = $Config.ProfileRoot
             }
         }
     }
@@ -4291,6 +4515,39 @@ $cmbScope.Add_SelectionChanged({
     if ($script:IsLoadingConfiguration) { return }
     Save-ApplicationConfiguration
     Refresh-Items
+})
+$txtProfileRoot.Add_LostFocus({
+    if ($script:IsLoadingConfiguration) { return }
+    $Config.ProfileRoot = $txtProfileRoot.Text.Trim()
+    Save-ApplicationConfiguration
+    if ($cmbScope.SelectedIndex -eq 3) {
+        Refresh-Items
+    }
+})
+$btnBrowseProfileRoot.Add_Click({
+    $dialog = [System.Windows.Forms.FolderBrowserDialog]::new()
+    $dialog.Description = "Select a local or offline Windows profile folder"
+    $dialog.ShowNewFolderButton = $false
+    if (-not [string]::IsNullOrWhiteSpace($txtProfileRoot.Text) -and (Test-Path -LiteralPath $txtProfileRoot.Text -PathType Container)) {
+        $dialog.SelectedPath = $txtProfileRoot.Text
+    }
+
+    if ($dialog.ShowDialog() -eq 'OK') {
+        $txtProfileRoot.Text = $dialog.SelectedPath
+        $Config.ProfileRoot = $dialog.SelectedPath
+        Save-ApplicationConfiguration
+        if ($cmbScope.SelectedIndex -eq 3) {
+            Refresh-Items
+        }
+    }
+})
+$btnUseDefaultProfileRoot.Add_Click({
+    $txtProfileRoot.Text = Get-DefaultUserProfileRoot
+    $Config.ProfileRoot = $txtProfileRoot.Text
+    Save-ApplicationConfiguration
+    if ($cmbScope.SelectedIndex -eq 3) {
+        Refresh-Items
+    }
 })
 $cmbSort.Add_SelectionChanged({ Apply-Filters })
 

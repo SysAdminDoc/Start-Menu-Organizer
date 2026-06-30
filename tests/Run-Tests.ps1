@@ -24,7 +24,8 @@ $plainTests = @(
     'SettingsPersistence.Tests.ps1',
     'Packaging.Tests.ps1',
     'Logging.Tests.ps1',
-    'AccessibilityLocalization.Tests.ps1'
+    'AccessibilityLocalization.Tests.ps1',
+    'ProfileTarget.Tests.ps1'
 )
 
 foreach ($test in $plainTests) {

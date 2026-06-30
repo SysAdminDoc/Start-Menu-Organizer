@@ -2,7 +2,7 @@
 
 A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, remove duplicates, organize by category, and take full control of your Start Menu.
 
-![Version](https://img.shields.io/badge/Version-v0.12.0-blue)
+![Version](https://img.shields.io/badge/Version-v0.13.0-blue)
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-blue)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6)
 ![License](https://img.shields.io/badge/License-MIT-green)
@@ -42,6 +42,7 @@ A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, re
 - **Background Scanning** - Start Menu scans run in a cancelable worker so the window stays responsive
 - **Cancelable Bulk Execution** - Reviewed operation plans run incrementally with progress and Cancel support
 - **Search/Filter** (Ctrl+F) - Filter by name, path, or target in real-time
+- **Profile Targeting** - Scan a selected local/offline profile or the Windows Default user profile
 - **Filter Toggles** - Show/hide Shortcuts, Folders, Junk, Broken, Duplicates
 - **Sort Options** - Sort by Name, Type, Status, Location, or Target
 - **Preview Mode** - See what actions would do without executing them
@@ -69,7 +70,7 @@ A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, re
 ## Installation
 
 ### Option 1: Installable Package
-1. Download `StartMenuOrganizer-v0.12.0.zip` from the release artifacts.
+1. Download `StartMenuOrganizer-v0.13.0.zip` from the release artifacts.
 2. Extract the zip to a local folder.
 3. Install for the current user:
 
@@ -150,8 +151,10 @@ The tool manages shortcuts in these directories:
 |-------|------|
 | User | `%APPDATA%\Microsoft\Windows\Start Menu\Programs` |
 | System | `%ProgramData%\Microsoft\Windows\Start Menu\Programs` |
+| Selected Profile | `<profile root>\AppData\Roaming\Microsoft\Windows\Start Menu\Programs` |
+| Default User | `%SystemDrive%\Users\Default\AppData\Roaming\Microsoft\Windows\Start Menu\Programs` |
 
-**Note**: System Start Menu modifications require Administrator privileges.
+**Note**: System, Selected Profile, and Default User modifications require Administrator privileges. Standard users can scan readable profile targets, but destructive changes, restore, and backup operations for those scopes are blocked or skipped until the app is elevated.
 
 ## Configuration
 
@@ -193,6 +196,16 @@ Each file maps string keys to replacement text, for example:
   "txtSearch.AutomationName": "Search Start Menu entries"
 }
 ```
+
+### Profile Targeting
+To work against another local or offline Windows profile:
+
+1. Open Settings.
+2. Set **Profile Target** to the profile root, such as `D:\MountedUsers\Alice` or `C:\Users\Alice`.
+3. Select **Selected Profile** in the Scope picker.
+4. Run Start Menu Organizer as Administrator before applying changes, backup, or restore for that profile.
+
+Use **Default User** in the Scope picker to prepare `%SystemDrive%\Users\Default`; it is also admin-gated and uses separate `DefaultUser` backup folders.
 
 ## Data Storage
 
@@ -272,6 +285,12 @@ Run the accessibility and localization regression test:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\AccessibilityLocalization.Tests.ps1
+```
+
+Run the profile/default-user targeting regression test:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\ProfileTarget.Tests.ps1
 ```
 
 ## Troubleshooting

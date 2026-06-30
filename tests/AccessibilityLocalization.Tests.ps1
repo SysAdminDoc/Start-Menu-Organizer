@@ -95,7 +95,7 @@ try {
     $XAML = Invoke-XamlAssignment
     $reader = [System.Xml.XmlNodeReader]::new($XAML)
     $loadedWindow = [Windows.Markup.XamlReader]::Load($reader)
-    foreach ($requiredControl in @('txtAppTitle', 'tabActions', 'cmbScopeUser', 'txtCleanupHeader', 'btnDeleteSelected', 'txtLog')) {
+    foreach ($requiredControl in @('txtAppTitle', 'tabActions', 'cmbScopeUser', 'cmbScopeProfile', 'cmbScopeDefaultUser', 'txtCleanupHeader', 'btnDeleteSelected', 'txtProfileRoot', 'btnBrowseProfileRoot', 'txtLog')) {
         if (-not $loadedWindow.FindName($requiredControl)) {
             throw "Failed: XAML did not load named control $requiredControl"
         }
@@ -121,6 +121,9 @@ try {
         'btnDeleteSelected.AutomationName',
         'dgItems.AutomationName',
         'txtLog.AutomationName',
+        'txtProfileRoot.AutomationName',
+        'btnBrowseProfileRoot.AutomationName',
+        'btnUseDefaultProfileRoot.AutomationName',
         'Status.AdminFullAccess',
         'Status.StandardUser'
     )
@@ -130,7 +133,7 @@ try {
         }
     }
 
-    $requiredTabStops = @('txtSearch', 'btnBackup', 'cmbScope', 'dgItems', 'btnDeleteSelected', 'txtFindText', 'lstJunkPatterns', 'btnClearLog')
+    $requiredTabStops = @('txtSearch', 'btnBackup', 'cmbScope', 'dgItems', 'btnDeleteSelected', 'txtFindText', 'lstJunkPatterns', 'txtProfileRoot', 'btnBrowseProfileRoot', 'btnClearLog')
     foreach ($tabStop in $requiredTabStops) {
         if ($script:UiTabOrder -notcontains $tabStop) {
             throw "Failed: missing tab stop $tabStop"

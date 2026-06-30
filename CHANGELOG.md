@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.13.0 - 2026-06-30
+
+- Added Selected Profile and Default User scope options with explicit profile-root validation.
+- Added profile/default-user scope metadata for scanning, guarded mutations, separate backup folders, and restore planning.
+- Added admin gating for system, selected-profile, and default-user mutations through the guarded file-operation helper.
+- Added profile/default-user regression coverage.
+
 ## v0.12.0 - 2026-06-28
 
 - Added centralized UI string metadata with optional JSON localization overrides under `%LOCALAPPDATA%\StartMenuOrganizerPro\Localization`.
