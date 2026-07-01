@@ -3025,23 +3025,34 @@ function Import-OperationPlan {
             $plan = Get-Content -LiteralPath $openDialog.FileName -Raw | ConvertFrom-Json
             $operations = @($plan.Operations)
             $allowedRoots = @(Get-ApprovedMutationRoots)
-            foreach ($operation in $operations) {
+            $validationErrors = @()
+
+            for ($i = 0; $i -lt $operations.Count; $i++) {
+                $operation = $operations[$i]
+                $opLabel = "Operation $($i + 1)"
                 if ($operation.Action -notin @('Delete','Move','Rename')) {
-                    throw "Unsupported operation action: $($operation.Action)"
+                    $validationErrors += "$opLabel`: unsupported action '$($operation.Action)'"
+                    continue
                 }
                 if ([string]::IsNullOrWhiteSpace($operation.SourcePath)) {
-                    throw "Operation is missing SourcePath."
+                    $validationErrors += "$opLabel`: missing SourcePath"
+                    continue
                 }
                 $sourceRoot = Get-ApprovedMutationRoot -Path $operation.SourcePath -AllowedRoots $allowedRoots
                 if (-not $sourceRoot) {
-                    throw "Operation source is outside approved roots: $($operation.SourcePath)"
+                    $validationErrors += "$opLabel`: source outside approved roots: $($operation.SourcePath)"
                 }
                 if ($operation.Action -in @('Move','Rename') -and -not [string]::IsNullOrWhiteSpace($operation.DestinationPath)) {
                     $destRoot = Get-ApprovedMutationRoot -Path $operation.DestinationPath -AllowedRoots $allowedRoots
                     if (-not $destRoot) {
-                        throw "Operation destination is outside approved roots: $($operation.DestinationPath)"
+                        $validationErrors += "$opLabel`: destination outside approved roots: $($operation.DestinationPath)"
                     }
                 }
+            }
+
+            if ($validationErrors.Count -gt 0) {
+                $summary = $validationErrors -join "`n"
+                throw "Plan has $($validationErrors.Count) validation error(s):`n$summary"
             }
 
             $script:CurrentOperationPlan = $plan
