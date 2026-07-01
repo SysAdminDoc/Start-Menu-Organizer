@@ -22,6 +22,8 @@ $helperFunctions = @(
     'Ensure-JournalStorage',
     'New-OperationId',
     'New-JournalItem',
+    'Write-AtomicFile',
+    'Read-WithBackupFallback',
     'Save-UndoJournal',
     'Add-JournalEntry'
 )

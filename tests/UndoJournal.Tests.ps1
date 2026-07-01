@@ -32,6 +32,8 @@ $helperFunctions = @(
     'New-UndoBackupCopy',
     'Invoke-GuardedFileOperation',
     'New-JournalItem',
+    'Write-AtomicFile',
+    'Read-WithBackupFallback',
     'Save-UndoJournal',
     'Load-UndoJournal',
     'Add-JournalEntry',

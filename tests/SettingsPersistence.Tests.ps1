@@ -16,6 +16,8 @@ $helperFunctions = @(
     'Get-ConfigurationSnapshot',
     'Set-ObservableCollection',
     'Apply-ConfigurationSnapshot',
+    'Write-AtomicFile',
+    'Read-WithBackupFallback',
     'Save-ApplicationConfiguration',
     'Load-ApplicationConfiguration'
 )

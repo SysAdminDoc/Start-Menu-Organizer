@@ -2413,6 +2413,60 @@ function New-JournalItem {
     }
 }
 
+function Write-AtomicFile {
+    param(
+        [string]$Path,
+        [string]$Content
+    )
+
+    $dir = Split-Path $Path -Parent
+    if (-not (Test-Path -LiteralPath $dir)) {
+        [System.IO.Directory]::CreateDirectory($dir) | Out-Null
+    }
+
+    $tmpPath = "$Path.tmp"
+    [System.IO.File]::WriteAllText($tmpPath, $Content, [System.Text.UTF8Encoding]::new($false))
+
+    if (Test-Path -LiteralPath $Path) {
+        $bakPath = "$Path.bak"
+        Copy-Item -LiteralPath $Path -Destination $bakPath -Force -ErrorAction SilentlyContinue
+    }
+
+    Move-Item -LiteralPath $tmpPath -Destination $Path -Force
+}
+
+function Read-WithBackupFallback {
+    param([string]$Path)
+
+    if (Test-Path -LiteralPath $Path) {
+        try {
+            $raw = Get-Content -LiteralPath $Path -Raw
+            $null = $raw | ConvertFrom-Json
+            return $raw
+        }
+        catch {
+            $badPath = "$Path.bad.$(Get-Date -Format 'yyyyMMddHHmmss')"
+            Move-Item -LiteralPath $Path -Destination $badPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    $bakPath = "$Path.bak"
+    if (Test-Path -LiteralPath $bakPath) {
+        try {
+            $raw = Get-Content -LiteralPath $bakPath -Raw
+            $null = $raw | ConvertFrom-Json
+            Copy-Item -LiteralPath $bakPath -Destination $Path -Force
+            return $raw
+        }
+        catch {
+            $badBak = "$bakPath.bad.$(Get-Date -Format 'yyyyMMddHHmmss')"
+            Move-Item -LiteralPath $bakPath -Destination $badBak -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    return $null
+}
+
 function Save-UndoJournal {
     Ensure-JournalStorage
     if ($script:UndoStack.Count -eq 0) {
@@ -2421,16 +2475,17 @@ function Save-UndoJournal {
     else {
         $json = @($script:UndoStack) | ConvertTo-Json -Depth 12
     }
-    [System.IO.File]::WriteAllText($Config.UndoFile, $json, [System.Text.UTF8Encoding]::new($false))
+    Write-AtomicFile -Path $Config.UndoFile -Content $json
 }
 
 function Load-UndoJournal {
     Ensure-JournalStorage
     $script:UndoStack.Clear()
 
-    if (Test-Path -LiteralPath $Config.UndoFile) {
+    $raw = Read-WithBackupFallback -Path $Config.UndoFile
+    if ($raw) {
         try {
-            $loaded = @(Get-Content -LiteralPath $Config.UndoFile -Raw | ConvertFrom-Json)
+            $loaded = @($raw | ConvertFrom-Json)
             foreach ($entry in $loaded) {
                 if ($entry) {
                     $script:UndoStack.Add($entry)
@@ -2442,9 +2497,7 @@ function Load-UndoJournal {
             }
         }
         catch {
-            $badPath = "$($Config.UndoFile).bad.$(Get-Date -Format 'yyyyMMddHHmmss')"
-            Move-Item -LiteralPath $Config.UndoFile -Destination $badPath -Force -ErrorAction SilentlyContinue
-            Write-Log "Undo journal was invalid and has been reset: $badPath" 'Warning'
+            Write-Log "Undo journal could not be parsed after recovery attempt." 'Warning'
         }
     }
 
@@ -4638,10 +4691,8 @@ function Apply-ConfigurationSnapshot {
 
 function Save-ApplicationConfiguration {
     try {
-        $configDir = Split-Path $Config.ConfigFile -Parent
-        [System.IO.Directory]::CreateDirectory($configDir) | Out-Null
         $json = Get-ConfigurationSnapshot | ConvertTo-Json -Depth 8
-        [System.IO.File]::WriteAllText($Config.ConfigFile, $json, [System.Text.UTF8Encoding]::new($false))
+        Write-AtomicFile -Path $Config.ConfigFile -Content $json
         Write-Log "Settings saved." 'Info'
     }
     catch {
@@ -4650,17 +4701,16 @@ function Save-ApplicationConfiguration {
 }
 
 function Load-ApplicationConfiguration {
-    if (-not (Test-Path -LiteralPath $Config.ConfigFile)) { return }
+    $raw = Read-WithBackupFallback -Path $Config.ConfigFile
+    if (-not $raw) { return }
 
     try {
-        $snapshot = Get-Content -LiteralPath $Config.ConfigFile -Raw | ConvertFrom-Json
+        $snapshot = $raw | ConvertFrom-Json
         Apply-ConfigurationSnapshot -Snapshot $snapshot
         Write-Log "Settings loaded." 'Success'
     }
     catch {
-        $badPath = "$($Config.ConfigFile).bad.$(Get-Date -Format 'yyyyMMddHHmmss')"
-        Move-Item -LiteralPath $Config.ConfigFile -Destination $badPath -Force -ErrorAction SilentlyContinue
-        Write-Log "Settings file was invalid and has been reset: $badPath" 'Warning'
+        Write-Log "Settings could not be parsed after recovery attempt." 'Warning'
     }
 }
 
