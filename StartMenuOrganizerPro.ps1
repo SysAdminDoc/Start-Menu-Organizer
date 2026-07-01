@@ -1115,6 +1115,7 @@ $script:DefaultUiStrings = [ordered]@{
     'colStatus.Header' = 'Status'
     'colLocation.Header' = 'Location'
     'colTarget.Header' = 'Target'
+    'colRisk.Header' = 'Risk'
     'btnSelectAll.Content' = 'All'
     'btnSelectNone.Content' = 'None'
     'btnSelectJunk.Content' = 'Junk'
@@ -1245,6 +1246,7 @@ $script:UiTabOrder = @(
     'btnBackup',
     'btnRestore',
     'btnExportReport',
+    'btnElevate',
     'cmbScope',
     'btnRefresh',
     'cmbSort',
