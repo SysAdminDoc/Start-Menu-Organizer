@@ -2088,7 +2088,12 @@ function Get-ShortcutTarget {
         }
 
         $shortcut = $script:WScriptShell.CreateShortcut($ShortcutPath)
-        return $shortcut.TargetPath
+        try {
+            return $shortcut.TargetPath
+        }
+        finally {
+            [System.Runtime.Interopservices.Marshal]::ReleaseComObject($shortcut) | Out-Null
+        }
     }
     catch {
         return $null
@@ -2148,13 +2153,18 @@ function Get-ShortcutMetadata {
     try {
         if ($extension -eq '.lnk') {
             $lnk = $Shell.CreateShortcut($ShortcutPath)
-            $meta.Target = $lnk.TargetPath
-            $meta.Arguments = $lnk.Arguments
-            $meta.WorkingDir = $lnk.WorkingDirectory
-            $meta.Description = $lnk.Description
-            $meta.Hotkey = $lnk.Hotkey
-            $meta.IconLocation = $lnk.IconLocation
-            $meta.WindowStyle = $lnk.WindowStyle
+            try {
+                $meta.Target = $lnk.TargetPath
+                $meta.Arguments = $lnk.Arguments
+                $meta.WorkingDir = $lnk.WorkingDirectory
+                $meta.Description = $lnk.Description
+                $meta.Hotkey = $lnk.Hotkey
+                $meta.IconLocation = $lnk.IconLocation
+                $meta.WindowStyle = $lnk.WindowStyle
+            }
+            finally {
+                [System.Runtime.Interopservices.Marshal]::ReleaseComObject($lnk) | Out-Null
+            }
         }
         elseif ($extension -eq '.url') {
             $lines = @(Get-Content -LiteralPath $ShortcutPath -ErrorAction Stop)
@@ -3014,12 +3024,23 @@ function Import-OperationPlan {
         try {
             $plan = Get-Content -LiteralPath $openDialog.FileName -Raw | ConvertFrom-Json
             $operations = @($plan.Operations)
+            $allowedRoots = @(Get-ApprovedMutationRoots)
             foreach ($operation in $operations) {
                 if ($operation.Action -notin @('Delete','Move','Rename')) {
                     throw "Unsupported operation action: $($operation.Action)"
                 }
                 if ([string]::IsNullOrWhiteSpace($operation.SourcePath)) {
                     throw "Operation is missing SourcePath."
+                }
+                $sourceRoot = Get-ApprovedMutationRoot -Path $operation.SourcePath -AllowedRoots $allowedRoots
+                if (-not $sourceRoot) {
+                    throw "Operation source is outside approved roots: $($operation.SourcePath)"
+                }
+                if ($operation.Action -in @('Move','Rename') -and -not [string]::IsNullOrWhiteSpace($operation.DestinationPath)) {
+                    $destRoot = Get-ApprovedMutationRoot -Path $operation.DestinationPath -AllowedRoots $allowedRoots
+                    if (-not $destRoot) {
+                        throw "Operation destination is outside approved roots: $($operation.DestinationPath)"
+                    }
                 }
             }
 
@@ -3243,7 +3264,12 @@ function Refresh-Items {
                 }
 
                 $shortcut = $Shell.CreateShortcut($ShortcutPath)
-                return $shortcut.TargetPath
+                try {
+                    return $shortcut.TargetPath
+                }
+                finally {
+                    [System.Runtime.Interopservices.Marshal]::ReleaseComObject($shortcut) | Out-Null
+                }
             }
             catch {
                 return $null
@@ -3329,13 +3355,18 @@ function Refresh-Items {
             try {
                 if ($ext -eq '.lnk') {
                     $lnk = $Shell.CreateShortcut($ShortcutPath)
-                    $meta.Target = $lnk.TargetPath
-                    $meta.Arguments = $lnk.Arguments
-                    $meta.WorkingDir = $lnk.WorkingDirectory
-                    $meta.Description = $lnk.Description
-                    $meta.Hotkey = $lnk.Hotkey
-                    $meta.IconLocation = $lnk.IconLocation
-                    $meta.WindowStyle = $lnk.WindowStyle
+                    try {
+                        $meta.Target = $lnk.TargetPath
+                        $meta.Arguments = $lnk.Arguments
+                        $meta.WorkingDir = $lnk.WorkingDirectory
+                        $meta.Description = $lnk.Description
+                        $meta.Hotkey = $lnk.Hotkey
+                        $meta.IconLocation = $lnk.IconLocation
+                        $meta.WindowStyle = $lnk.WindowStyle
+                    }
+                    finally {
+                        [System.Runtime.Interopservices.Marshal]::ReleaseComObject($lnk) | Out-Null
+                    }
                 }
                 elseif ($ext -eq '.url') {
                     $lines = @(Get-Content -LiteralPath $ShortcutPath -ErrorAction Stop)
