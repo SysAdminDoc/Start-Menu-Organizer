@@ -34,7 +34,17 @@ foreach ($test in $plainTests) {
     & (Join-Path $PSScriptRoot $test) | Out-Host
 }
 
-Invoke-Pester -Path (Join-Path $PSScriptRoot 'StartMenuOrganizer.Pester.Tests.ps1') -CI
+Import-Module Pester -MinimumVersion 5.0 -ErrorAction Stop
+$pesterConfig = New-PesterConfiguration
+$pesterConfig.Run.Path = (Join-Path $PSScriptRoot 'StartMenuOrganizer.Pester.Tests.ps1')
+$pesterConfig.Run.Exit = $true
+$pesterConfig.CodeCoverage.Enabled = $true
+$pesterConfig.CodeCoverage.Path = $scriptPath
+$pesterConfig.CodeCoverage.CoveragePercentTarget = 0
+$pesterConfig.CodeCoverage.OutputFormat = 'JaCoCo'
+$pesterConfig.CodeCoverage.OutputPath = (Join-Path $repoRoot 'coverage.xml')
+$pesterConfig.Output.Verbosity = 'Detailed'
+Invoke-Pester -Configuration $pesterConfig
 
 $analysis = @(Invoke-ScriptAnalyzer -Path $scriptPath -Settings $settingsPath)
 if ($analysis.Count -gt 0) {
