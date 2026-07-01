@@ -3583,7 +3583,6 @@ function Refresh-Items {
 
         $result = $Output | Select-Object -First 1
         $script:AllItems.Clear()
-        $script:FilteredItems.Clear()
 
         foreach ($item in @($result.Items)) {
             $script:AllItems.Add($item)
@@ -3601,11 +3600,12 @@ function Refresh-Items {
 
 function Apply-Filters {
     $searchText = $txtSearch.Text.ToLower()
-    
+
+    $dgItems.ItemsSource = $null
+
     $script:FilteredItems.Clear()
-    
+
     foreach ($item in $script:AllItems) {
-        # Search filter
         if (-not [string]::IsNullOrEmpty($searchText)) {
             $nameMatch = $item.DisplayName -and $item.DisplayName.ToLower().Contains($searchText)
             $pathMatch = $item.RelativePath -and $item.RelativePath.ToLower().Contains($searchText)
@@ -3614,18 +3614,16 @@ function Apply-Filters {
                 continue
             }
         }
-        
-        # Type filters
+
         if ($item.IsFolder -and -not $chkShowFolders.IsChecked) { continue }
         if (-not $item.IsFolder -and -not $item.IsJunk -and -not $item.IsBroken -and -not $item.IsDuplicate -and -not $chkShowShortcuts.IsChecked) { continue }
         if ($item.IsJunk -and -not $chkShowJunk.IsChecked) { continue }
         if ($item.IsBroken -and -not $chkShowBroken.IsChecked) { continue }
         if ($item.IsDuplicate -and -not $chkShowDuplicates.IsChecked) { continue }
-        
+
         $script:FilteredItems.Add($item)
     }
-    
-    # Apply sorting
+
     $sortBy = $cmbSort.SelectedIndex
     $sorted = switch ($sortBy) {
         0 { $script:FilteredItems | Sort-Object DisplayName }
@@ -3635,12 +3633,13 @@ function Apply-Filters {
         4 { $script:FilteredItems | Sort-Object TargetPath }
         default { $script:FilteredItems }
     }
-    
+
     $script:FilteredItems.Clear()
     foreach ($item in $sorted) {
         $script:FilteredItems.Add($item)
     }
-    
+
+    $dgItems.ItemsSource = $script:FilteredItems
     $txtItemCount.Text = "$($script:FilteredItems.Count) of $($script:AllItems.Count) items"
 }
 
