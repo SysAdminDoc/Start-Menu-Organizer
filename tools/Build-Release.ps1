@@ -143,11 +143,71 @@ $artifactHash = (Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash
 $artifactManifest = Join-Path $OutputRoot "$packageName.zip.sha256"
 [System.IO.File]::WriteAllText($artifactManifest, "$artifactHash  $packageName.zip", [System.Text.UTF8Encoding]::new($false))
 
+$pkgMetaDir = Join-Path $OutputRoot 'package-metadata'
+[System.IO.Directory]::CreateDirectory($pkgMetaDir) | Out-Null
+
+$scoopManifest = [ordered]@{
+    version = $version
+    description = 'Start Menu cleanup and organization tool for Windows'
+    homepage = 'https://github.com/SysAdminDoc/Start-Menu-Organizer'
+    license = 'MIT'
+    url = "https://github.com/SysAdminDoc/Start-Menu-Organizer/releases/download/v$version/$packageName.zip"
+    hash = $artifactHash
+    installer = @{
+        script = 'powershell -NoProfile -ExecutionPolicy Bypass -File "$dir\Install-StartMenuOrganizer.ps1"'
+    }
+    uninstaller = @{
+        script = 'powershell -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\Start Menu Organizer\Uninstall-StartMenuOrganizer.ps1"'
+    }
+}
+$scoopJson = $scoopManifest | ConvertTo-Json -Depth 4
+[System.IO.File]::WriteAllText((Join-Path $pkgMetaDir 'start-menu-organizer.json'), $scoopJson, [System.Text.UTF8Encoding]::new($false))
+
+$chocoNuspec = @"
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>start-menu-organizer</id>
+    <version>$version</version>
+    <title>Start Menu Organizer</title>
+    <authors>SysAdminDoc</authors>
+    <projectUrl>https://github.com/SysAdminDoc/Start-Menu-Organizer</projectUrl>
+    <licenseUrl>https://github.com/SysAdminDoc/Start-Menu-Organizer/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>Clean up junk, detect broken shortcuts, remove duplicates, and organize your Windows Start Menu.</description>
+    <summary>Windows Start Menu management tool</summary>
+    <tags>start-menu windows cleanup organizer shortcuts</tags>
+  </metadata>
+</package>
+"@
+[System.IO.File]::WriteAllText((Join-Path $pkgMetaDir 'start-menu-organizer.nuspec'), $chocoNuspec, [System.Text.UTF8Encoding]::new($false))
+
+$wingetYaml = @"
+PackageIdentifier: SysAdminDoc.StartMenuOrganizer
+PackageVersion: $version
+PackageName: Start Menu Organizer
+Publisher: SysAdminDoc
+License: MIT
+ShortDescription: Windows Start Menu cleanup and organization tool
+PackageUrl: https://github.com/SysAdminDoc/Start-Menu-Organizer
+Installers:
+  - Architecture: neutral
+    InstallerType: zip
+    InstallerUrl: https://github.com/SysAdminDoc/Start-Menu-Organizer/releases/download/v$version/$packageName.zip
+    InstallerSha256: $artifactHash
+ManifestType: singleton
+ManifestVersion: 1.4.0
+"@
+[System.IO.File]::WriteAllText((Join-Path $pkgMetaDir "SysAdminDoc.StartMenuOrganizer.yaml"), $wingetYaml, [System.Text.UTF8Encoding]::new($false))
+
+Write-Host "Package metadata generated in $pkgMetaDir"
+
 [PSCustomObject]@{
     Version = $version
     Artifact = $artifactPath
     ArtifactHash = $artifactHash
     ManifestPath = $manifestPath
+    PackageMetadata = $pkgMetaDir
     Signed = [bool]$signingCert
     PackageRoot = $stageRoot
 }
