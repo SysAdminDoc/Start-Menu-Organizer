@@ -704,6 +704,13 @@ $script:WScriptShell = New-Object -ComObject WScript.Shell
                             <DataGridTextColumn x:Name="colStatus" Header="Status" Binding="{Binding Status}" Width="90"/>
                             <DataGridTextColumn x:Name="colLocation" Header="Location" Binding="{Binding RelativePath}" Width="200"/>
                             <DataGridTextColumn x:Name="colTarget" Header="Target" Binding="{Binding TargetPath}" Width="*"/>
+                            <DataGridTextColumn x:Name="colRisk" Header="Risk" Binding="{Binding RiskFlags}" Width="120">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="#d29922"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
                         </DataGrid.Columns>
                     </DataGrid>
                     
@@ -2013,6 +2020,95 @@ function Test-ShortcutBroken {
     return $false
 }
 
+function Get-ShortcutMetadata {
+    param(
+        [string]$ShortcutPath,
+        $Shell = $script:WScriptShell
+    )
+
+    $meta = [ordered]@{
+        Target       = ''
+        Arguments    = ''
+        WorkingDir   = ''
+        Description  = ''
+        Hotkey       = ''
+        IconLocation = ''
+        WindowStyle  = 0
+    }
+
+    $extension = [System.IO.Path]::GetExtension($ShortcutPath).ToLowerInvariant()
+
+    try {
+        if ($extension -eq '.lnk') {
+            $lnk = $Shell.CreateShortcut($ShortcutPath)
+            $meta.Target = $lnk.TargetPath
+            $meta.Arguments = $lnk.Arguments
+            $meta.WorkingDir = $lnk.WorkingDirectory
+            $meta.Description = $lnk.Description
+            $meta.Hotkey = $lnk.Hotkey
+            $meta.IconLocation = $lnk.IconLocation
+            $meta.WindowStyle = $lnk.WindowStyle
+        }
+        elseif ($extension -eq '.url') {
+            $lines = @(Get-Content -LiteralPath $ShortcutPath -ErrorAction Stop)
+            foreach ($line in $lines) {
+                if ($line -match '^URL=(.*)') { $meta.Target = $Matches[1].Trim() }
+                elseif ($line -match '^IconFile=(.*)') { $meta.IconLocation = $Matches[1].Trim() }
+                elseif ($line -match '^HotKey=(.*)') { $meta.Hotkey = $Matches[1].Trim() }
+                elseif ($line -match '^WorkingDirectory=(.*)') { $meta.WorkingDir = $Matches[1].Trim() }
+            }
+        }
+        elseif ($extension -eq '.appref-ms') {
+            $meta.Target = $ShortcutPath
+        }
+    }
+    catch {
+        $meta.Target = ''
+    }
+
+    return [PSCustomObject]$meta
+}
+
+function Get-ShortcutRiskFlags {
+    param([PSCustomObject]$Metadata)
+
+    $flags = @()
+
+    $target = if ($Metadata.Target) { $Metadata.Target } else { '' }
+    $metaArgs = if ($Metadata.Arguments) { $Metadata.Arguments } else { '' }
+
+    $scriptHosts = @('cmd.exe', 'cmd', 'powershell.exe', 'powershell', 'pwsh.exe', 'pwsh',
+                     'wscript.exe', 'wscript', 'cscript.exe', 'cscript', 'mshta.exe', 'mshta',
+                     'rundll32.exe', 'rundll32', 'regsvr32.exe', 'regsvr32', 'msiexec.exe', 'msiexec')
+    $targetLeaf = [System.IO.Path]::GetFileNameWithoutExtension($target)
+    $targetFile = [System.IO.Path]::GetFileName($target)
+    if ($scriptHosts -contains $targetLeaf -or $scriptHosts -contains $targetFile) {
+        $flags += 'ScriptHost'
+    }
+
+    if ($target -match '\\\\' -or $target -match '^\\\\') {
+        $flags += 'NetworkTarget'
+    }
+
+    if ($metaArgs.Length -gt 260) {
+        $flags += 'LongArguments'
+    }
+
+    if ($metaArgs -match '(^|\s)-[Ee]nc(odedCommand)?\s' -or $metaArgs -match '-[Ww]indowStyle\s+[Hh]idden') {
+        $flags += 'HiddenExecution'
+    }
+
+    if ($target -match '^(https?|ftp)://' -or ($target -match '^file://')) {
+        $flags += 'WebTarget'
+    }
+
+    if ($target -match '\.(bat|cmd|vbs|vbe|js|jse|wsf|wsh|ps1|psm1|psd1)$') {
+        $flags += 'ScriptTarget'
+    }
+
+    return $flags
+}
+
 function Test-ProtectedFolder {
     param(
         [string]$Path,
@@ -2058,12 +2154,13 @@ function Get-ItemCategory {
 
 function Get-ItemStatus {
     param($Item)
-    
+
     $statuses = @()
     if ($Item.IsJunk) { $statuses += 'Junk' }
     if ($Item.IsBroken) { $statuses += 'Broken' }
     if ($Item.IsDuplicate) { $statuses += 'Duplicate' }
     if ($Item.IsProtected) { $statuses += 'Protected' }
+    if ($Item.RiskFlags -and $Item.RiskFlags -ne '') { $statuses += 'Risk' }
     if ($statuses.Count -eq 0) { return 'OK' }
     return $statuses -join ', '
 }
@@ -2918,6 +3015,93 @@ function Refresh-Items {
             return $ProtectedFolders -contains $topFolder
         }
 
+        function Get-WorkerShortcutMetadata {
+            param(
+                [string]$ShortcutPath,
+                $Shell
+            )
+
+            $meta = [ordered]@{
+                Target       = ''
+                Arguments    = ''
+                WorkingDir   = ''
+                Description  = ''
+                Hotkey       = ''
+                IconLocation = ''
+                WindowStyle  = 0
+            }
+
+            $ext = [System.IO.Path]::GetExtension($ShortcutPath).ToLowerInvariant()
+            try {
+                if ($ext -eq '.lnk') {
+                    $lnk = $Shell.CreateShortcut($ShortcutPath)
+                    $meta.Target = $lnk.TargetPath
+                    $meta.Arguments = $lnk.Arguments
+                    $meta.WorkingDir = $lnk.WorkingDirectory
+                    $meta.Description = $lnk.Description
+                    $meta.Hotkey = $lnk.Hotkey
+                    $meta.IconLocation = $lnk.IconLocation
+                    $meta.WindowStyle = $lnk.WindowStyle
+                }
+                elseif ($ext -eq '.url') {
+                    $lines = @(Get-Content -LiteralPath $ShortcutPath -ErrorAction Stop)
+                    foreach ($line in $lines) {
+                        if ($line -match '^URL=(.*)') { $meta.Target = $Matches[1].Trim() }
+                        elseif ($line -match '^IconFile=(.*)') { $meta.IconLocation = $Matches[1].Trim() }
+                        elseif ($line -match '^HotKey=(.*)') { $meta.Hotkey = $Matches[1].Trim() }
+                        elseif ($line -match '^WorkingDirectory=(.*)') { $meta.WorkingDir = $Matches[1].Trim() }
+                    }
+                }
+                elseif ($ext -eq '.appref-ms') {
+                    $meta.Target = $ShortcutPath
+                }
+            }
+            catch {
+                $meta.Target = ''
+            }
+
+            return [PSCustomObject]$meta
+        }
+
+        function Get-WorkerRiskFlags {
+            param([PSCustomObject]$Metadata)
+
+            $flags = @()
+            $target = if ($Metadata.Target) { $Metadata.Target } else { '' }
+            $mArgs = if ($Metadata.Arguments) { $Metadata.Arguments } else { '' }
+
+            $scriptHosts = @('cmd.exe', 'cmd', 'powershell.exe', 'powershell', 'pwsh.exe', 'pwsh',
+                             'wscript.exe', 'wscript', 'cscript.exe', 'cscript', 'mshta.exe', 'mshta',
+                             'rundll32.exe', 'rundll32', 'regsvr32.exe', 'regsvr32', 'msiexec.exe', 'msiexec')
+            $targetLeaf = [System.IO.Path]::GetFileNameWithoutExtension($target)
+            $targetFile = [System.IO.Path]::GetFileName($target)
+            if ($scriptHosts -contains $targetLeaf -or $scriptHosts -contains $targetFile) {
+                $flags += 'ScriptHost'
+            }
+
+            if ($target -match '\\\\' -or $target -match '^\\\\') {
+                $flags += 'NetworkTarget'
+            }
+
+            if ($mArgs.Length -gt 260) {
+                $flags += 'LongArguments'
+            }
+
+            if ($mArgs -match '(^|\s)-[Ee]nc(odedCommand)?\s' -or $mArgs -match '-[Ww]indowStyle\s+[Hh]idden') {
+                $flags += 'HiddenExecution'
+            }
+
+            if ($target -match '^(https?|ftp)://' -or ($target -match '^file://')) {
+                $flags += 'WebTarget'
+            }
+
+            if ($target -match '\.(bat|cmd|vbs|vbe|js|jse|wsf|wsh|ps1|psm1|psd1)$') {
+                $flags += 'ScriptTarget'
+            }
+
+            return $flags
+        }
+
         $items = [System.Collections.Generic.List[object]]::new()
         $allShortcuts = @{}
         $shell = New-Object -ComObject WScript.Shell
@@ -2950,11 +3134,20 @@ function Refresh-Items {
                         $isProtected = Test-WorkerProtected -Path $entry.FullName -BasePath $basePath
                         $isBroken = $false
                         $targetPath = ''
+                        $shortcutArgs = ''
+                        $shortcutWorkingDir = ''
+                        $shortcutDescription = ''
+                        $riskFlags = @()
                         $extension = $entry.Extension.ToLowerInvariant()
 
                         if (-not $isFolder -and $extension -in @('.lnk', '.url', '.appref-ms')) {
-                            $targetPath = Get-WorkerShortcutTarget -ShortcutPath $entry.FullName -Shell $shell
+                            $metadata = Get-WorkerShortcutMetadata -ShortcutPath $entry.FullName -Shell $shell
+                            $targetPath = $metadata.Target
+                            $shortcutArgs = $metadata.Arguments
+                            $shortcutWorkingDir = $metadata.WorkingDir
+                            $shortcutDescription = $metadata.Description
                             $isBroken = Test-WorkerShortcutBroken -ShortcutPath $entry.FullName -Shell $shell
+                            $riskFlags = @(Get-WorkerRiskFlags -Metadata $metadata)
 
                             if (-not [string]::IsNullOrEmpty($targetPath)) {
                                 if (-not $allShortcuts.ContainsKey($targetPath)) {
@@ -2979,6 +3172,7 @@ function Refresh-Items {
                         else {
                             'Shortcut'
                         }
+                        $riskDisplay = if ($riskFlags.Count -gt 0) { $riskFlags -join ', ' } else { '' }
                         $item = [PSCustomObject]@{
                             IsSelected   = $false
                             DisplayName  = $entry.BaseName
@@ -2992,6 +3186,10 @@ function Refresh-Items {
                             IsProtected  = $isProtected
                             ItemType     = $itemType
                             TargetPath   = $targetPath
+                            Arguments    = $shortcutArgs
+                            WorkingDir   = $shortcutWorkingDir
+                            Description  = $shortcutDescription
+                            RiskFlags    = $riskDisplay
                             Status       = 'OK'
                             IsSystem     = $requiresAdmin
                             RequiresAdmin = $requiresAdmin
