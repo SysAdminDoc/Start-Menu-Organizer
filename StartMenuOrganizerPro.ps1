@@ -3683,6 +3683,84 @@ function Export-ScanReport {
     }
 }
 
+function Get-VirtualGroupPreview {
+    if (-not $script:AllItems -or $script:AllItems.Count -eq 0) {
+        return @()
+    }
+
+    $groups = [ordered]@{}
+    foreach ($category in $script:Categories.Keys) {
+        $groups[$category] = @()
+    }
+    $groups['Uncategorized'] = @()
+
+    foreach ($item in $script:AllItems) {
+        if ($item.IsFolder) { continue }
+        $category = Get-ItemCategory $item.DisplayName
+        if ($category) {
+            $groups[$category] += [PSCustomObject]@{
+                Name     = $item.DisplayName
+                Path     = $item.RelativePath
+                Target   = $item.TargetPath
+                Category = $category
+            }
+        }
+        else {
+            $groups['Uncategorized'] += [PSCustomObject]@{
+                Name     = $item.DisplayName
+                Path     = $item.RelativePath
+                Target   = $item.TargetPath
+                Category = 'Uncategorized'
+            }
+        }
+    }
+
+    return $groups
+}
+
+function Export-VirtualGroupPreview {
+    $groups = Get-VirtualGroupPreview
+    if ($groups.Count -eq 0) {
+        [System.Windows.MessageBox]::Show("No scan results. Run a scan first.", "Virtual Groups", "OK", "Information")
+        return
+    }
+
+    $saveDialog = [System.Windows.Forms.SaveFileDialog]::new()
+    $saveDialog.Filter = "JSON files (*.json)|*.json"
+    $saveDialog.FileName = "VirtualGroups_$(Get-Date -Format 'yyyyMMdd_HHmmss').json"
+
+    if ($saveDialog.ShowDialog() -ne 'OK') { return }
+
+    $preview = [ordered]@{
+        GeneratedAt = (Get-Date).ToString('o')
+        Version     = $Config.Version
+        Note        = 'Virtual preview only. No files were moved.'
+        Groups      = [ordered]@{}
+    }
+
+    foreach ($key in $groups.Keys) {
+        $items = @($groups[$key])
+        if ($items.Count -gt 0) {
+            $preview.Groups[$key] = @($items | ForEach-Object {
+                [ordered]@{
+                    Name   = $_.Name
+                    Path   = $_.Path
+                    Target = $_.Target
+                }
+            })
+        }
+    }
+
+    try {
+        $json = $preview | ConvertTo-Json -Depth 8
+        [System.IO.File]::WriteAllText($saveDialog.FileName, $json, [System.Text.UTF8Encoding]::new($false))
+        Write-Log "Virtual group preview exported: $($saveDialog.FileName)" 'Success'
+    }
+    catch {
+        Write-Log "Failed to export virtual groups: $($_.Exception.Message)" 'Error'
+    }
+}
+
 function Export-EnterpriseHandoff {
     if (-not $script:AllItems -or $script:AllItems.Count -eq 0) {
         [System.Windows.MessageBox]::Show("No scan results. Run a scan first.", "Export Handoff", "OK", "Information")
