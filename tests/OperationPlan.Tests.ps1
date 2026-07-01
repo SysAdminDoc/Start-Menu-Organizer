@@ -25,6 +25,8 @@ $helperFunctions = @(
     'Get-ApprovedMutationRoots',
     'Test-MutationRootRequiresAdministrator',
     'Get-ApprovedMutationRoot',
+    'Test-ReparsePoint',
+    'Test-PathContainsReparsePoint',
     'Ensure-JournalStorage',
     'New-OperationId',
     'New-UndoBackupCopy',

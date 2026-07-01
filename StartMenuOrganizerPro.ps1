@@ -2120,6 +2120,48 @@ function Test-PathWithinRoot {
     return $fullPath.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase)
 }
 
+function Test-ReparsePoint {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+    try {
+        $info = [System.IO.FileInfo]::new($Path)
+        if (-not $info.Exists) {
+            $dirInfo = [System.IO.DirectoryInfo]::new($Path)
+            if (-not $dirInfo.Exists) { return $false }
+            return ($dirInfo.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
+        }
+        return ($info.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
+    }
+    catch {
+        return $false
+    }
+}
+
+function Test-PathContainsReparsePoint {
+    param(
+        [string]$Path,
+        [string]$Root
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or [string]::IsNullOrWhiteSpace($Root)) {
+        return $false
+    }
+
+    $fullPath = Get-NormalizedPath $Path
+    $rootPath = Get-NormalizedPath $Root
+
+    $current = $fullPath
+    while ($current.Length -gt $rootPath.Length) {
+        if (Test-ReparsePoint $current) { return $true }
+        $parent = [System.IO.Path]::GetDirectoryName($current)
+        if ([string]::IsNullOrWhiteSpace($parent) -or $parent -eq $current) { break }
+        $current = $parent
+    }
+
+    return $false
+}
+
 function Get-ApprovedMutationRoot {
     param(
         [string]$Path,
@@ -2173,6 +2215,12 @@ function Invoke-GuardedFileOperation {
         if (Test-ProtectedFolder -Path $SourcePath -BasePath $sourceRoot) {
             throw "Source path is protected: $SourcePath"
         }
+        if (Test-ReparsePoint $SourcePath) {
+            throw "Source path is a reparse point (junction/symlink): $SourcePath"
+        }
+        if (Test-PathContainsReparsePoint -Path $SourcePath -Root $sourceRoot) {
+            throw "Source path traverses a reparse point: $SourcePath"
+        }
 
         if ($Action -eq 'Rename') {
             if ([string]::IsNullOrWhiteSpace($NewName)) {
@@ -2196,6 +2244,9 @@ function Invoke-GuardedFileOperation {
             }
             if (Test-ProtectedFolder -Path $DestinationPath -BasePath $destinationRoot) {
                 throw "Destination path is protected: $DestinationPath"
+            }
+            if (Test-PathContainsReparsePoint -Path $DestinationPath -Root $destinationRoot) {
+                throw "Destination path traverses a reparse point: $DestinationPath"
             }
 
             if ((Test-Path -LiteralPath $DestinationPath) -and ((Get-NormalizedPath $SourcePath) -ne (Get-NormalizedPath $DestinationPath)) -and $CollisionPolicy -eq 'Fail') {
@@ -2880,61 +2931,74 @@ function Refresh-Items {
                 $requiresAdmin = [bool]$scope.RequiresAdmin
                 $scopeName = $scope.ScopeName
 
-                Get-ChildItem -LiteralPath $basePath -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
-                    $relativePath = $_.FullName.Substring($basePath.Length + 1)
-                    $isFolder = $_.PSIsContainer
-                    $isJunk = Test-WorkerJunk $_.BaseName
-                    $isProtected = Test-WorkerProtected -Path $_.FullName -BasePath $basePath
-                    $isBroken = $false
-                    $targetPath = ''
-                    $extension = $_.Extension.ToLowerInvariant()
-
-                    if (-not $isFolder -and $extension -in @('.lnk', '.url', '.appref-ms')) {
-                        $targetPath = Get-WorkerShortcutTarget -ShortcutPath $_.FullName -Shell $shell
-                        $isBroken = Test-WorkerShortcutBroken -ShortcutPath $_.FullName -Shell $shell
-
-                        if (-not [string]::IsNullOrEmpty($targetPath)) {
-                            if (-not $allShortcuts.ContainsKey($targetPath)) {
-                                $allShortcuts[$targetPath] = @()
-                            }
-                            $allShortcuts[$targetPath] += $_.FullName
+                $scanQueue = [System.Collections.Generic.Queue[string]]::new()
+                $scanQueue.Enqueue($basePath)
+                while ($scanQueue.Count -gt 0) {
+                    $currentDir = $scanQueue.Dequeue()
+                    $children = @(Get-ChildItem -LiteralPath $currentDir -Force -ErrorAction SilentlyContinue)
+                    foreach ($dirChild in $children) {
+                        if ($dirChild.PSIsContainer -and ($dirChild.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0) {
+                            $scanQueue.Enqueue($dirChild.FullName)
                         }
                     }
+                    foreach ($entry in $children) {
+                        $isReparsePoint = ($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
+                        if ($isReparsePoint -and $entry.PSIsContainer) { continue }
+                        $relativePath = $entry.FullName.Substring($basePath.Length + 1)
+                        $isFolder = $entry.PSIsContainer
+                        $isJunk = Test-WorkerJunk $entry.BaseName
+                        $isProtected = Test-WorkerProtected -Path $entry.FullName -BasePath $basePath
+                        $isBroken = $false
+                        $targetPath = ''
+                        $extension = $entry.Extension.ToLowerInvariant()
 
-                    $itemType = if ($isFolder) {
-                        'Folder'
+                        if (-not $isFolder -and $extension -in @('.lnk', '.url', '.appref-ms')) {
+                            $targetPath = Get-WorkerShortcutTarget -ShortcutPath $entry.FullName -Shell $shell
+                            $isBroken = Test-WorkerShortcutBroken -ShortcutPath $entry.FullName -Shell $shell
+
+                            if (-not [string]::IsNullOrEmpty($targetPath)) {
+                                if (-not $allShortcuts.ContainsKey($targetPath)) {
+                                    $allShortcuts[$targetPath] = @()
+                                }
+                                $allShortcuts[$targetPath] += $entry.FullName
+                            }
+                        }
+
+                        $itemType = if ($isFolder) {
+                            'Folder'
+                        }
+                        elseif ($extension -eq '.url') {
+                            'URL'
+                        }
+                        elseif ($extension -eq '.appref-ms') {
+                            'App Reference'
+                        }
+                        elseif ($isJunk) {
+                            'Junk'
+                        }
+                        else {
+                            'Shortcut'
+                        }
+                        $item = [PSCustomObject]@{
+                            IsSelected   = $false
+                            DisplayName  = $entry.BaseName
+                            RelativePath = "$prefix $relativePath"
+                            FullPath     = $entry.FullName
+                            BasePath     = $basePath
+                            IsFolder     = $isFolder
+                            IsJunk       = $isJunk
+                            IsBroken     = $isBroken
+                            IsDuplicate  = $false
+                            IsProtected  = $isProtected
+                            ItemType     = $itemType
+                            TargetPath   = $targetPath
+                            Status       = 'OK'
+                            IsSystem     = $requiresAdmin
+                            RequiresAdmin = $requiresAdmin
+                            ScopeName    = $scopeName
+                        }
+                        $items.Add($item)
                     }
-                    elseif ($extension -eq '.url') {
-                        'URL'
-                    }
-                    elseif ($extension -eq '.appref-ms') {
-                        'App Reference'
-                    }
-                    elseif ($isJunk) {
-                        'Junk'
-                    }
-                    else {
-                        'Shortcut'
-                    }
-                    $item = [PSCustomObject]@{
-                        IsSelected   = $false
-                        DisplayName  = $_.BaseName
-                        RelativePath = "$prefix $relativePath"
-                        FullPath     = $_.FullName
-                        BasePath     = $basePath
-                        IsFolder     = $isFolder
-                        IsJunk       = $isJunk
-                        IsBroken     = $isBroken
-                        IsDuplicate  = $false
-                        IsProtected  = $isProtected
-                        ItemType     = $itemType
-                        TargetPath   = $targetPath
-                        Status       = 'OK'
-                        IsSystem     = $requiresAdmin
-                        RequiresAdmin = $requiresAdmin
-                        ScopeName    = $scopeName
-                    }
-                    $items.Add($item)
                 }
             }
 
@@ -4056,11 +4120,14 @@ function Copy-DirectoryContents {
     }
 
     $children = @(Get-ChildItem -LiteralPath $SourcePath -Force -ErrorAction Stop)
+    $copied = 0
     foreach ($child in $children) {
+        if (($child.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
         Copy-Item -LiteralPath $child.FullName -Destination $DestinationPath -Recurse -Force -ErrorAction Stop
+        $copied++
     }
 
-    return $children.Count
+    return $copied
 }
 
 function Clear-DirectoryContents {
