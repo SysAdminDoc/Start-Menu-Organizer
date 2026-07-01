@@ -3290,7 +3290,7 @@ function Refresh-Items {
         function Test-WorkerShortcutBroken {
             param(
                 [string]$ShortcutPath,
-                $Shell
+                [string]$Target
             )
 
             if (-not (Test-Path -LiteralPath $ShortcutPath)) { return $true }
@@ -3298,14 +3298,15 @@ function Refresh-Items {
             $extension = [System.IO.Path]::GetExtension($ShortcutPath).ToLowerInvariant()
             if ($extension -eq '.appref-ms') { return $false }
 
-            $target = Get-WorkerShortcutTarget -ShortcutPath $ShortcutPath -Shell $Shell
-            if ([string]::IsNullOrEmpty($target)) { return $false }
-            if ($target -match '^(https?|ftp)://') { return $false }
-            if ($target -match '^file://') {
-                $target = ([System.Uri]$target).LocalPath
+            if ([string]::IsNullOrEmpty($Target)) { return $false }
+            if ($Target -match '^(https?|ftp)://') { return $false }
+
+            $checkTarget = $Target
+            if ($checkTarget -match '^file://') {
+                $checkTarget = ([System.Uri]$checkTarget).LocalPath
             }
 
-            $expandedTarget = [Environment]::ExpandEnvironmentVariables($target)
+            $expandedTarget = [Environment]::ExpandEnvironmentVariables($checkTarget)
             if ($expandedTarget -match '^[A-Za-z]:\\Windows\\' -or
                 $expandedTarget -match '^shell:' -or
                 $expandedTarget -match '^ms-[A-Za-z-]+:') {
@@ -3504,7 +3505,7 @@ function Refresh-Items {
                             $shortcutArgs = $metadata.Arguments
                             $shortcutWorkingDir = $metadata.WorkingDir
                             $shortcutDescription = $metadata.Description
-                            $isBroken = Test-WorkerShortcutBroken -ShortcutPath $entry.FullName -Shell $shell
+                            $isBroken = Test-WorkerShortcutBroken -ShortcutPath $entry.FullName -Target $targetPath
                             $riskFlags = @(Get-WorkerRiskFlags -Metadata $metadata)
                             $provenance = Get-WorkerProvenance -TargetPath $targetPath
 
