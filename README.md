@@ -315,6 +315,18 @@ Run the profile/default-user targeting regression test:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\ProfileTarget.Tests.ps1
 ```
 
+Run the reparse-point safety guards regression test:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\SafetyGuards.Tests.ps1
+```
+
+Run the shortcut metadata and risk classification regression test:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\ShortcutMetadata.Tests.ps1
+```
+
 ## Troubleshooting
 
 ### "Access Denied" errors
