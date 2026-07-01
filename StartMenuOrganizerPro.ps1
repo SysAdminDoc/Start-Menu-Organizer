@@ -2237,6 +2237,35 @@ function Test-ProtectedFolder {
     return @($script:ProtectedFolders) -contains $topFolder
 }
 
+function Get-ShortcutProvenance {
+    param([string]$TargetPath)
+
+    if ([string]::IsNullOrWhiteSpace($TargetPath)) { return '' }
+
+    $expanded = [Environment]::ExpandEnvironmentVariables($TargetPath)
+
+    $chocoRoot = "$env:ProgramData\chocolatey"
+    if ($expanded -like "$chocoRoot*") { return 'Chocolatey' }
+
+    $scoopUserRoot = "$env:USERPROFILE\scoop"
+    $scoopGlobalRoot = "$env:ProgramData\scoop"
+    if ($expanded -like "$scoopUserRoot*" -or $expanded -like "$scoopGlobalRoot*") { return 'Scoop' }
+
+    $wingetLinks = "$env:LOCALAPPDATA\Microsoft\WinGet\Links"
+    $wingetPackages = "$env:LOCALAPPDATA\Microsoft\WinGet\Packages"
+    if ($expanded -like "$wingetLinks*" -or $expanded -like "$wingetPackages*") { return 'WinGet' }
+
+    $programFiles = $env:ProgramFiles
+    $programFilesX86 = ${env:ProgramFiles(x86)}
+    $localPrograms = "$env:LOCALAPPDATA\Programs"
+    if ($expanded -like "$programFiles*" -or $expanded -like "$programFilesX86*") { return 'Installer' }
+    if ($expanded -like "$localPrograms*") { return 'UserInstaller' }
+
+    if ($expanded -like "$env:LOCALAPPDATA\Microsoft\WindowsApps*") { return 'MSIX' }
+
+    return ''
+}
+
 function Test-IsJunk {
     param([string]$Name)
 
@@ -3359,6 +3388,28 @@ function Refresh-Items {
             return $flags
         }
 
+        function Get-WorkerProvenance {
+            param([string]$TargetPath)
+
+            if ([string]::IsNullOrWhiteSpace($TargetPath)) { return '' }
+            $expanded = [Environment]::ExpandEnvironmentVariables($TargetPath)
+            $chocoRoot = "$env:ProgramData\chocolatey"
+            if ($expanded -like "$chocoRoot*") { return 'Chocolatey' }
+            $scoopUserRoot = "$env:USERPROFILE\scoop"
+            $scoopGlobalRoot = "$env:ProgramData\scoop"
+            if ($expanded -like "$scoopUserRoot*" -or $expanded -like "$scoopGlobalRoot*") { return 'Scoop' }
+            $wingetLinks = "$env:LOCALAPPDATA\Microsoft\WinGet\Links"
+            $wingetPackages = "$env:LOCALAPPDATA\Microsoft\WinGet\Packages"
+            if ($expanded -like "$wingetLinks*" -or $expanded -like "$wingetPackages*") { return 'WinGet' }
+            $programFiles = $env:ProgramFiles
+            $programFilesX86 = ${env:ProgramFiles(x86)}
+            $localPrograms = "$env:LOCALAPPDATA\Programs"
+            if ($expanded -like "$programFiles*" -or $expanded -like "$programFilesX86*") { return 'Installer' }
+            if ($expanded -like "$localPrograms*") { return 'UserInstaller' }
+            if ($expanded -like "$env:LOCALAPPDATA\Microsoft\WindowsApps*") { return 'MSIX' }
+            return ''
+        }
+
         $items = [System.Collections.Generic.List[object]]::new()
         $allShortcuts = @{}
         $shell = New-Object -ComObject WScript.Shell
@@ -3405,6 +3456,7 @@ function Refresh-Items {
                             $shortcutDescription = $metadata.Description
                             $isBroken = Test-WorkerShortcutBroken -ShortcutPath $entry.FullName -Shell $shell
                             $riskFlags = @(Get-WorkerRiskFlags -Metadata $metadata)
+                            $provenance = Get-WorkerProvenance -TargetPath $targetPath
 
                             if (-not [string]::IsNullOrEmpty($targetPath)) {
                                 if (-not $allShortcuts.ContainsKey($targetPath)) {
@@ -3447,6 +3499,7 @@ function Refresh-Items {
                             WorkingDir   = $shortcutWorkingDir
                             Description  = $shortcutDescription
                             RiskFlags    = $riskDisplay
+                            Provenance   = $provenance
                             Status       = 'OK'
                             IsSystem     = $requiresAdmin
                             RequiresAdmin = $requiresAdmin
@@ -3598,6 +3651,7 @@ function Export-ScanReport {
             WorkingDir  = if ($_.WorkingDir) { $_.WorkingDir } else { '' }
             Description = if ($_.Description) { $_.Description } else { '' }
             RiskFlags   = if ($_.RiskFlags) { $_.RiskFlags } else { '' }
+            Provenance  = if ($_.Provenance) { $_.Provenance } else { '' }
             Scope       = if ($_.ScopeName) { $_.ScopeName } else { '' }
             IsJunk      = [bool]$_.IsJunk
             IsBroken    = [bool]$_.IsBroken
