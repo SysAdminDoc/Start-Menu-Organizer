@@ -26,11 +26,63 @@
 # CONFIGURATION
 # ============================================================================
 
+function Resolve-KnownFolderPath {
+    param([string]$FolderGuid)
+
+    try {
+        $type = [Type]::GetType('Shell32KnownFolder')
+        if (-not $type) {
+            Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+public class Shell32KnownFolder {
+    [DllImport("shell32.dll")]
+    static extern int SHGetKnownFolderPath(
+        [MarshalAs(UnmanagedType.LPStruct)] Guid rfid,
+        uint dwFlags, IntPtr hToken, out IntPtr ppszPath);
+
+    public static string GetPath(string guidString) {
+        IntPtr ptr = IntPtr.Zero;
+        try {
+            int hr = SHGetKnownFolderPath(new Guid(guidString), 0, IntPtr.Zero, out ptr);
+            if (hr != 0) return null;
+            return Marshal.PtrToStringUni(ptr);
+        } finally {
+            if (ptr != IntPtr.Zero) Marshal.FreeCoTaskMem(ptr);
+        }
+    }
+}
+'@
+        }
+        return [Shell32KnownFolder]::GetPath($FolderGuid)
+    }
+    catch {
+        return $null
+    }
+}
+
+function Get-UserStartMenuPrograms {
+    $knownPath = Resolve-KnownFolderPath '{A77F5D77-2E2B-44C3-A6A2-ABA601054A51}'
+    if ($knownPath -and (Test-Path -LiteralPath $knownPath -PathType Container)) {
+        return $knownPath
+    }
+    return [Environment]::GetFolderPath('StartMenu') + '\Programs'
+}
+
+function Get-SystemStartMenuPrograms {
+    $knownPath = Resolve-KnownFolderPath '{A4115719-D62E-491D-AA7C-E74B8BE3B067}'
+    if ($knownPath -and (Test-Path -LiteralPath $knownPath -PathType Container)) {
+        return $knownPath
+    }
+    return "$env:ProgramData\Microsoft\Windows\Start Menu\Programs"
+}
+
 $script:Config = @{
     Version         = "0.13.0"
     SettingsSchema  = 1
-    UserStartMenu   = [Environment]::GetFolderPath('StartMenu') + '\Programs'
-    SystemStartMenu = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs"
+    UserStartMenu   = Get-UserStartMenuPrograms
+    SystemStartMenu = Get-SystemStartMenuPrograms
     ProfileRoot     = ''
     DefaultProfileRoot = "$env:SystemDrive\Users\Default"
     BackupRoot      = "$env:LOCALAPPDATA\StartMenuOrganizerPro\Backups"
