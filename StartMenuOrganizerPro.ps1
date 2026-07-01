@@ -1495,6 +1495,49 @@ function Import-UiStringFile {
     }
 }
 
+function Export-LocalizationTemplate {
+    param([string]$OutputPath)
+
+    $template = [ordered]@{}
+    foreach ($entry in $script:DefaultUiStrings.GetEnumerator()) {
+        $template[$entry.Key] = $entry.Value
+    }
+
+    $json = $template | ConvertTo-Json -Depth 4
+    [System.IO.File]::WriteAllText($OutputPath, $json, [System.Text.UTF8Encoding]::new($false))
+    return $template.Count
+}
+
+function Test-LocalizationCompleteness {
+    param([string]$OverridePath)
+
+    $result = [ordered]@{
+        Missing  = @()
+        Orphaned = @()
+        Valid    = $true
+    }
+
+    if (-not (Test-Path -LiteralPath $OverridePath)) {
+        return [PSCustomObject]$result
+    }
+
+    try {
+        $overrides = Get-Content -LiteralPath $OverridePath -Raw | ConvertFrom-Json
+    }
+    catch {
+        $result.Valid = $false
+        return [PSCustomObject]$result
+    }
+
+    $overrideKeys = @($overrides.PSObject.Properties | ForEach-Object { $_.Name })
+    $defaultKeys = @($script:DefaultUiStrings.Keys)
+
+    $result.Missing = @($defaultKeys | Where-Object { $overrideKeys -notcontains $_ })
+    $result.Orphaned = @($overrideKeys | Where-Object { $defaultKeys -notcontains $_ })
+
+    return [PSCustomObject]$result
+}
+
 function Load-UiStrings {
     $script:UiStrings = [ordered]@{}
     foreach ($entry in $script:DefaultUiStrings.GetEnumerator()) {
