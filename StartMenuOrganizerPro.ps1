@@ -79,7 +79,7 @@ function Get-SystemStartMenuPrograms {
 }
 
 $script:Config = @{
-    Version         = "0.13.0"
+    Version         = "0.14.0"
     SettingsSchema  = 1
     UserStartMenu   = Get-UserStartMenuPrograms
     SystemStartMenu = Get-SystemStartMenuPrograms

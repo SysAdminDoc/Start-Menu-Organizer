@@ -2,7 +2,7 @@
 
 A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, remove duplicates, organize by category, and take full control of your Start Menu.
 
-![Version](https://img.shields.io/badge/Version-v0.13.0-blue)
+![Version](https://img.shields.io/badge/Version-v0.14.0-blue)
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-blue)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6)
 ![License](https://img.shields.io/badge/License-MIT-green)
@@ -12,8 +12,12 @@ A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, re
 ### Detection & Analysis
 - **Broken Shortcut Detection** - Identifies shortcuts pointing to files/folders that no longer exist
 - **Richer Shortcut Validation** - Classifies `.lnk`, `.url`, and `.appref-ms` entries, including file URL checks
+- **Full Shortcut Metadata** - Extracts target, arguments, working directory, description, hotkey, and icon for `.lnk` and `.url` files
+- **Risk Classification** - Flags suspicious shortcuts: script hosts, network targets, encoded commands, hidden execution, long arguments, script file targets
+- **Package Provenance** - Detects winget, Chocolatey, Scoop, MSIX, and traditional installer origins
 - **Duplicate Detection** - Finds multiple shortcuts targeting the same executable
 - **Junk Detection** - Flags uninstall links, readme files, help docs, license files, and other clutter
+- **Reparse Point Safety** - Blocks junction/symlink traversal during scans and mutations
 - **Target Path Display** - See exactly where each shortcut points
 
 ### Cleanup Actions
@@ -52,6 +56,7 @@ A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, re
 
 ### Safety Features
 - **Persistent Undo Support** (Ctrl+Z) - Recover reversible deletes, moves, renames, and restores from the saved operation journal
+- **Atomic File Writes** - Config and journal files use temp-file-then-rename with `.bak` recovery for crash safety
 - **Backup/Restore** - Create timestamped backups before making changes
 - **Fail-Closed Restore** - Validates backup contents in staging and preserves a pre-restore rollback snapshot before replacing live entries
 - **Editable Transaction Plans** - Preview bulk actions into JSON plans that can be reviewed, exported, imported, and executed exactly
@@ -60,6 +65,16 @@ A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, re
 - **Structured Logs** - Writes dated JSONL logs and crash reports under the local app data folder
 - **Preview Mode** - Dry-run any operation first
 - **Confirmation Dialogs** - No destructive action without explicit approval
+
+### Export & Reporting
+- **Export Scan Report** - Export current scan results as CSV or JSON
+- **Enterprise Handoff** - Export cleaned shortcut inventory with deployment guidance for Intune/Start Layout
+- **Virtual Group Preview** - Preview category organization without moving files
+- **Rule Preset Import/Export** - Save and load junk/category/protected-folder configurations
+
+### Elevation
+- **Capability Status** - Shows which scopes are writable vs read-only in the current session
+- **Relaunch as Admin** - One-click UAC elevation for full system access
 
 ### Customization (Settings Tab)
 - Add/remove junk detection patterns
@@ -70,7 +85,7 @@ A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, re
 ## Installation
 
 ### Option 1: Installable Package
-1. Download `StartMenuOrganizer-v0.13.0.zip` from the release artifacts.
+1. Download `StartMenuOrganizer-v0.14.0.zip` from the release artifacts.
 2. Extract the zip to a local folder.
 3. Install for the current user:
 
@@ -92,6 +107,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\
 
 ```powershell
 .\StartMenuOrganizerPro.ps1
+```
+
+### Verifying the Download
+After downloading, verify the SHA256 hash against `SHA256SUMS.txt` inside the zip or the `.sha256` file:
+
+```powershell
+(Get-FileHash .\StartMenuOrganizer-v0.14.0.zip -Algorithm SHA256).Hash
 ```
 
 ### Running as Administrator
