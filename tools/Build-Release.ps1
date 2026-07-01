@@ -68,6 +68,7 @@ $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$InstallRoot\S
 $shortcut.WorkingDirectory = $InstallRoot
 $shortcut.Description = 'Start Menu Organizer'
 $shortcut.Save()
+[System.Runtime.Interopservices.Marshal]::ReleaseComObject($shortcut) | Out-Null
 [System.Runtime.Interopservices.Marshal]::ReleaseComObject($shell) | Out-Null
 
 $uninstallPath = Join-Path $InstallRoot 'Uninstall-StartMenuOrganizer.ps1'
