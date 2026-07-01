@@ -642,7 +642,8 @@ $script:WScriptShell = New-Object -ComObject WScript.Shell
                     <Button x:Name="btnUndo" Content="Undo" Style="{StaticResource SecondaryButton}"
                             Margin="0,0,8,0" IsEnabled="False" ToolTip="Ctrl+Z"/>
                     <Button x:Name="btnBackup" Content="Backup" Style="{StaticResource SecondaryButton}" Margin="0,0,8,0"/>
-                    <Button x:Name="btnRestore" Content="Restore" Style="{StaticResource SecondaryButton}"/>
+                    <Button x:Name="btnRestore" Content="Restore" Style="{StaticResource SecondaryButton}" Margin="0,0,8,0"/>
+                    <Button x:Name="btnExportReport" Content="Export Report" Style="{StaticResource SecondaryButton}"/>
                 </StackPanel>
             </Grid>
         </Border>
@@ -1065,6 +1066,7 @@ $script:DefaultUiStrings = [ordered]@{
     'btnUndo.ToolTip' = 'Undo the last reversible operation'
     'btnBackup.Content' = 'Backup'
     'btnRestore.Content' = 'Restore'
+    'btnExportReport.Content' = 'Export Report'
     'lblScope.Text' = 'Scope:'
     'cmbScopeUser.Content' = 'User Start Menu'
     'cmbScopeSystem.Content' = 'System Start Menu'
@@ -1175,6 +1177,8 @@ $script:DefaultUiStrings = [ordered]@{
     'btnBackup.HelpText' = 'Creates a timestamped backup of selected Start Menu scopes.'
     'btnRestore.AutomationName' = 'Restore backup'
     'btnRestore.HelpText' = 'Restores a previous Start Menu backup after staging and validation.'
+    'btnExportReport.AutomationName' = 'Export scan report'
+    'btnExportReport.HelpText' = 'Exports the current scan results as a CSV or JSON report.'
     'cmbScope.AutomationName' = 'Start Menu scope'
     'cmbScope.HelpText' = 'Selects whether scans target the user Start Menu, system Start Menu, both, a selected profile, or the default user profile.'
     'btnRefresh.AutomationName' = 'Refresh items'
@@ -1235,6 +1239,7 @@ $script:UiTabOrder = @(
     'btnUndo',
     'btnBackup',
     'btnRestore',
+    'btnExportReport',
     'cmbScope',
     'btnRefresh',
     'cmbSort',
@@ -3419,6 +3424,65 @@ function Get-SelectedItems {
 }
 
 # ============================================================================
+# REPORT EXPORT
+# ============================================================================
+
+function Export-ScanReport {
+    if (-not $script:AllItems -or $script:AllItems.Count -eq 0) {
+        [System.Windows.MessageBox]::Show("No scan results to export. Run a scan first.", "Export Report", "OK", "Information")
+        return
+    }
+
+    $saveDialog = [System.Windows.Forms.SaveFileDialog]::new()
+    $saveDialog.Filter = "CSV files (*.csv)|*.csv|JSON files (*.json)|*.json"
+    $saveDialog.FileName = "StartMenuReport_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+
+    if ($saveDialog.ShowDialog() -ne 'OK') { return }
+
+    $exportItems = @($script:AllItems | ForEach-Object {
+        [ordered]@{
+            Name        = $_.DisplayName
+            Type        = $_.ItemType
+            Status      = $_.Status
+            Location    = $_.RelativePath
+            FullPath    = $_.FullPath
+            Target      = $_.TargetPath
+            Arguments   = if ($_.Arguments) { $_.Arguments } else { '' }
+            WorkingDir  = if ($_.WorkingDir) { $_.WorkingDir } else { '' }
+            Description = if ($_.Description) { $_.Description } else { '' }
+            RiskFlags   = if ($_.RiskFlags) { $_.RiskFlags } else { '' }
+            Scope       = if ($_.ScopeName) { $_.ScopeName } else { '' }
+            IsJunk      = [bool]$_.IsJunk
+            IsBroken    = [bool]$_.IsBroken
+            IsDuplicate = [bool]$_.IsDuplicate
+            IsProtected = [bool]$_.IsProtected
+        }
+    })
+
+    try {
+        $ext = [System.IO.Path]::GetExtension($saveDialog.FileName).ToLowerInvariant()
+        if ($ext -eq '.json') {
+            $report = [ordered]@{
+                GeneratedAt = (Get-Date).ToString('o')
+                Version     = $Config.Version
+                ItemCount   = $exportItems.Count
+                Items       = $exportItems
+            }
+            $json = $report | ConvertTo-Json -Depth 8
+            [System.IO.File]::WriteAllText($saveDialog.FileName, $json, [System.Text.UTF8Encoding]::new($false))
+        }
+        else {
+            $exportItems | ForEach-Object { [PSCustomObject]$_ } | Export-Csv -LiteralPath $saveDialog.FileName -NoTypeInformation -Encoding UTF8
+        }
+        Write-Log "Report exported: $($saveDialog.FileName) ($($exportItems.Count) items)" 'Success'
+    }
+    catch {
+        Write-Log "Failed to export report: $($_.Exception.Message)" 'Error'
+        [System.Windows.MessageBox]::Show("Export failed: $($_.Exception.Message)", "Export Error", "OK", "Error")
+    }
+}
+
+# ============================================================================
 # ACTION FUNCTIONS
 # ============================================================================
 
@@ -4994,6 +5058,7 @@ $btnClearPlan.Add_Click({ Clear-OperationPlan })
 # Backup/Restore
 $btnBackup.Add_Click({ Create-Backup })
 $btnRestore.Add_Click({ Restore-Backup })
+$btnExportReport.Add_Click({ Export-ScanReport })
 $btnUndo.Add_Click({ Invoke-Undo })
 
 # Quick open buttons
