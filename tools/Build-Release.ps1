@@ -106,14 +106,48 @@ Write-Host 'Start Menu Organizer was uninstalled.'
 [System.IO.File]::WriteAllText((Join-Path $stageRoot 'Install-StartMenuOrganizer.ps1'), $installScript, [System.Text.UTF8Encoding]::new($false))
 [System.IO.File]::WriteAllText((Join-Path $stageRoot 'Uninstall-StartMenuOrganizer.ps1'), $uninstallScript, [System.Text.UTF8Encoding]::new($false))
 
+$signingCert = $null
+try {
+    $signingCert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert -ErrorAction Stop | Select-Object -First 1
+}
+catch {
+    Write-Verbose "No code signing certificate found."
+}
+
+$ps1Files = Get-ChildItem -LiteralPath $stageRoot -Filter '*.ps1' -Force
+if ($signingCert) {
+    foreach ($ps1 in $ps1Files) {
+        Set-AuthenticodeSignature -FilePath $ps1.FullName -Certificate $signingCert -TimestampServer 'http://timestamp.digicert.com' -ErrorAction Stop | Out-Null
+    }
+    Write-Host "Scripts signed with: $($signingCert.Subject)"
+}
+else {
+    Write-Host 'No code signing certificate available. Scripts are unsigned.'
+}
+
+$manifestPath = Join-Path $stageRoot 'SHA256SUMS.txt'
+$manifestLines = @()
+foreach ($file in (Get-ChildItem -LiteralPath $stageRoot -File -Force | Sort-Object Name)) {
+    $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+    $manifestLines += "$hash  $($file.Name)"
+}
+[System.IO.File]::WriteAllText($manifestPath, ($manifestLines -join "`n"), [System.Text.UTF8Encoding]::new($false))
+
 $packageItems = Get-ChildItem -LiteralPath $stageRoot -Force
 Compress-Archive -LiteralPath $packageItems.FullName -DestinationPath $artifactPath -Force
 if (-not (Test-Path -LiteralPath $artifactPath)) {
     throw "Artifact was not created: $artifactPath"
 }
 
+$artifactHash = (Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash
+$artifactManifest = Join-Path $OutputRoot "$packageName.zip.sha256"
+[System.IO.File]::WriteAllText($artifactManifest, "$artifactHash  $packageName.zip", [System.Text.UTF8Encoding]::new($false))
+
 [PSCustomObject]@{
     Version = $version
     Artifact = $artifactPath
+    ArtifactHash = $artifactHash
+    ManifestPath = $manifestPath
+    Signed = [bool]$signingCert
     PackageRoot = $stageRoot
 }
