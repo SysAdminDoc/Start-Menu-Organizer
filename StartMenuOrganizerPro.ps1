@@ -3683,6 +3683,72 @@ function Export-ScanReport {
     }
 }
 
+function Export-EnterpriseHandoff {
+    if (-not $script:AllItems -or $script:AllItems.Count -eq 0) {
+        [System.Windows.MessageBox]::Show("No scan results. Run a scan first.", "Export Handoff", "OK", "Information")
+        return
+    }
+
+    $saveDialog = [System.Windows.Forms.SaveFileDialog]::new()
+    $saveDialog.Filter = "JSON files (*.json)|*.json"
+    $saveDialog.FileName = "StartMenuHandoff_$(Get-Date -Format 'yyyyMMdd_HHmmss').json"
+
+    if ($saveDialog.ShowDialog() -ne 'OK') { return }
+
+    $shortcuts = @($script:AllItems | Where-Object { -not $_.IsFolder } | ForEach-Object {
+        [ordered]@{
+            Name       = $_.DisplayName
+            Path       = $_.RelativePath
+            Target     = $_.TargetPath
+            Arguments  = if ($_.Arguments) { $_.Arguments } else { '' }
+            Type       = $_.ItemType
+            Status     = $_.Status
+            RiskFlags  = if ($_.RiskFlags) { $_.RiskFlags } else { '' }
+            Provenance = if ($_.Provenance) { $_.Provenance } else { '' }
+            Scope      = if ($_.ScopeName) { $_.ScopeName } else { '' }
+            IsJunk     = [bool]$_.IsJunk
+            IsBroken   = [bool]$_.IsBroken
+            IsProtected = [bool]$_.IsProtected
+        }
+    })
+
+    $folders = @($script:AllItems | Where-Object { $_.IsFolder } | ForEach-Object {
+        [ordered]@{
+            Name        = $_.DisplayName
+            Path        = $_.RelativePath
+            IsProtected = [bool]$_.IsProtected
+            Scope       = if ($_.ScopeName) { $_.ScopeName } else { '' }
+        }
+    })
+
+    $handoff = [ordered]@{
+        GeneratedAt = (Get-Date).ToString('o')
+        Version     = $Config.Version
+        MachineName = $env:COMPUTERNAME
+        ShortcutCount = $shortcuts.Count
+        FolderCount   = $folders.Count
+        JunkCount     = @($script:AllItems | Where-Object { $_.IsJunk }).Count
+        BrokenCount   = @($script:AllItems | Where-Object { $_.IsBroken }).Count
+        Shortcuts   = $shortcuts
+        Folders     = $folders
+        DeploymentNotes = @(
+            'This handoff contains the current Start Menu inventory after cleanup.'
+            'Use Microsoft Start Layout deployment (Export-StartLayout / Import-StartLayout) or Intune to apply layouts at scale.'
+            'For companion layout export/import, see Start Menu Manager: https://github.com/SysAdminDoc/Start-Menu-Manager'
+        )
+    }
+
+    try {
+        $json = $handoff | ConvertTo-Json -Depth 8
+        [System.IO.File]::WriteAllText($saveDialog.FileName, $json, [System.Text.UTF8Encoding]::new($false))
+        Write-Log "Enterprise handoff exported: $($saveDialog.FileName) ($($shortcuts.Count) shortcuts, $($folders.Count) folders)" 'Success'
+    }
+    catch {
+        Write-Log "Failed to export handoff: $($_.Exception.Message)" 'Error'
+        [System.Windows.MessageBox]::Show("Export failed: $($_.Exception.Message)", "Export Error", "OK", "Error")
+    }
+}
+
 # ============================================================================
 # ACTION FUNCTIONS
 # ============================================================================
