@@ -615,7 +615,10 @@ $script:WScriptShell = New-Object -ComObject WScript.Shell
                 <StackPanel Grid.Column="0">
                     <TextBlock x:Name="txtAppTitle" Text="Start Menu Organizer Pro" FontSize="22" FontWeight="Bold"
                                Foreground="{StaticResource TextPrimary}"/>
-                    <TextBlock x:Name="txtAdminStatus" FontSize="11" Foreground="{StaticResource TextSecondary}" Margin="0,4,0,0"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                        <TextBlock x:Name="txtAdminStatus" FontSize="11" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center"/>
+                        <Button x:Name="btnElevate" Content="Run as Admin" Style="{StaticResource SmallButton}" Margin="8,0,0,0" Visibility="Collapsed"/>
+                    </StackPanel>
                 </StackPanel>
                 
                 <!-- Search Bar -->
@@ -1179,6 +1182,8 @@ $script:DefaultUiStrings = [ordered]@{
     'btnRestore.HelpText' = 'Restores a previous Start Menu backup after staging and validation.'
     'btnExportReport.AutomationName' = 'Export scan report'
     'btnExportReport.HelpText' = 'Exports the current scan results as a CSV or JSON report.'
+    'btnElevate.AutomationName' = 'Relaunch as Administrator'
+    'btnElevate.HelpText' = 'Relaunches Start Menu Organizer with Administrator privileges for full access.'
     'cmbScope.AutomationName' = 'Start Menu scope'
     'cmbScope.HelpText' = 'Selects whether scans target the user Start Menu, system Start Menu, both, a selected profile, or the default user profile.'
     'btnRefresh.AutomationName' = 'Refresh items'
@@ -5282,15 +5287,32 @@ Add-Type -AssemblyName Microsoft.VisualBasic
 
 Initialize-UiLocalizationAndAccessibility
 
-# Set admin status
+# Set admin status and elevation capability
 if ($script:IsAdmin) {
     $txtAdminStatus.Text = Get-UiString -Key 'Status.AdminFullAccess'
     $txtAdminStatus.Foreground = [System.Windows.Media.Brushes]::LightGreen
 }
 else {
-    $txtAdminStatus.Text = Get-UiString -Key 'Status.StandardUser'
+    $txtAdminStatus.Text = "$(Get-UiString -Key 'Status.StandardUser') (User scope writable, System/Profile read-only)"
     $txtAdminStatus.Foreground = [System.Windows.Media.Brushes]::Orange
+    $btnElevate.Visibility = 'Visible'
 }
+
+$btnElevate.Add_Click({
+    try {
+        $scriptPath = $MyInvocation.ScriptName
+        if ([string]::IsNullOrWhiteSpace($scriptPath)) {
+            $scriptPath = $PSCommandPath
+        }
+        Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
+            -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`"" `
+            -Verb RunAs
+        $Window.Close()
+    }
+    catch {
+        Write-Log "Elevation failed: $($_.Exception.Message)" 'Error'
+    }
+})
 
 # Ensure config directory exists
 $configDir = Split-Path $Config.ConfigFile -Parent
