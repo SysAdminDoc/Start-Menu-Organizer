@@ -99,6 +99,31 @@ try {
     if ($badFiles.Count -ne 1) {
         throw 'Failed: invalid config was not moved aside.'
     }
+
+    # --- Atomic write creates .bak and recovers from corrupt primary ---
+    $script:JunkPatterns = [System.Collections.ObjectModel.ObservableCollection[string]]@('*original*')
+    $script:Config.ConfigFile = Join-Path $testRoot 'atomic-config.json'
+    Save-ApplicationConfiguration
+    if (-not (Test-Path -LiteralPath "$($script:Config.ConfigFile).bak" -ErrorAction SilentlyContinue)) {
+        Save-ApplicationConfiguration
+    }
+    $bakExists = Test-Path -LiteralPath "$($script:Config.ConfigFile).bak"
+    if (-not $bakExists) {
+        throw 'Failed: .bak file was not created after second save.'
+    }
+
+    Set-Content -LiteralPath $script:Config.ConfigFile -Value '{ truncated'
+    $script:JunkPatterns = [System.Collections.ObjectModel.ObservableCollection[string]]@('*overwritten*')
+    Load-ApplicationConfiguration
+    if ($script:JunkPatterns[0] -ne '*original*') {
+        throw "Failed: backup fallback did not recover original config. Got: $($script:JunkPatterns[0])"
+    }
+
+    # --- Atomic write cleans up .tmp on failure ---
+    $tmpPath = "$($script:Config.ConfigFile).tmp"
+    if (Test-Path -LiteralPath $tmpPath) {
+        throw 'Failed: orphan .tmp file exists before test.'
+    }
 }
 finally {
     if (Test-Path -LiteralPath $testRoot) {
