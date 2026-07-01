@@ -2239,7 +2239,7 @@ function Test-ProtectedFolder {
 
 function Test-IsJunk {
     param([string]$Name)
-    
+
     foreach ($pattern in $script:JunkPatterns) {
         if ($Name -like $pattern) { return $true }
     }
@@ -2248,13 +2248,112 @@ function Test-IsJunk {
 
 function Get-ItemCategory {
     param([string]$Name)
-    
+
     foreach ($category in $script:Categories.Keys) {
         foreach ($pattern in $script:Categories[$category]) {
             if ($Name -like $pattern) { return $category }
         }
     }
     return $null
+}
+
+function Get-RuleEvaluation {
+    param(
+        [string]$Name,
+        [string]$FullPath,
+        [string]$BasePath
+    )
+
+    $result = [ordered]@{
+        IsProtected  = $false
+        IsJunk       = $false
+        Category     = $null
+        MatchedRules = @()
+    }
+
+    if (Test-ProtectedFolder -Path $FullPath -BasePath $BasePath) {
+        $result.IsProtected = $true
+        $result.MatchedRules += 'Protected'
+        return [PSCustomObject]$result
+    }
+
+    if (Test-IsJunk $Name) {
+        $result.IsJunk = $true
+        $result.MatchedRules += 'Junk'
+    }
+
+    $category = Get-ItemCategory $Name
+    if ($category) {
+        $result.Category = $category
+        $result.MatchedRules += "Category:$category"
+    }
+
+    return [PSCustomObject]$result
+}
+
+function Test-RuleConflicts {
+    param([string]$Name)
+
+    $conflicts = @()
+    $isJunk = Test-IsJunk $Name
+    $category = Get-ItemCategory $Name
+
+    if ($isJunk -and $category) {
+        $conflicts += "Item '$Name' matches both junk patterns and category '$category'. Junk takes precedence in scan classification."
+    }
+
+    return $conflicts
+}
+
+function Export-RulePreset {
+    param([string]$OutputPath)
+
+    $preset = [ordered]@{
+        Version          = $Config.Version
+        ExportedAt       = (Get-Date).ToString('o')
+        JunkPatterns     = @($script:JunkPatterns)
+        ProtectedFolders = @($script:ProtectedFolders)
+        Categories       = [ordered]@{}
+    }
+
+    foreach ($key in $script:Categories.Keys) {
+        $preset.Categories[$key] = @($script:Categories[$key])
+    }
+
+    $json = $preset | ConvertTo-Json -Depth 8
+    [System.IO.File]::WriteAllText($OutputPath, $json, [System.Text.UTF8Encoding]::new($false))
+    return $preset
+}
+
+function Import-RulePreset {
+    param([string]$InputPath)
+
+    if (-not (Test-Path -LiteralPath $InputPath)) {
+        throw "Preset file not found: $InputPath"
+    }
+
+    $preset = Get-Content -LiteralPath $InputPath -Raw | ConvertFrom-Json
+
+    if ($preset.JunkPatterns) {
+        $script:JunkPatterns.Clear()
+        foreach ($pattern in $preset.JunkPatterns) {
+            $script:JunkPatterns.Add($pattern)
+        }
+    }
+
+    if ($preset.ProtectedFolders) {
+        $script:ProtectedFolders.Clear()
+        foreach ($folder in $preset.ProtectedFolders) {
+            $script:ProtectedFolders.Add($folder)
+        }
+    }
+
+    if ($preset.Categories) {
+        $script:Categories = [ordered]@{}
+        foreach ($property in $preset.Categories.PSObject.Properties) {
+            $script:Categories[$property.Name] = @($property.Value)
+        }
+    }
 }
 
 function Get-ItemStatus {
