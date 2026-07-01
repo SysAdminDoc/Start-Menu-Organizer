@@ -4160,7 +4160,14 @@ function Flatten-SingleItemFolders {
             }
 
             $journalItems += Invoke-JournaledMove -SourcePath $item.Shortcut.FullName -DestinationPath $destPath -OperationId $operationId
-            $journalItems += Invoke-JournaledDelete -Path $item.Folder.FullName -OperationId $operationId
+
+            $remaining = @(Get-ChildItem -LiteralPath $item.Folder.FullName -Force -ErrorAction SilentlyContinue)
+            if ($remaining.Count -eq 0) {
+                $journalItems += Invoke-JournaledDelete -Path $item.Folder.FullName -OperationId $operationId
+            }
+            else {
+                Write-Log "Folder not empty after move, skipping delete: $($item.Folder.Name)" 'Warning'
+            }
 
             Write-Log "Flattened: $($item.Folder.Name)" 'Success'
             $flattened++
@@ -4427,7 +4434,7 @@ function Move-ToCategory {
         try {
             $categoryPath = Join-Path $item.BasePath $CategoryName
             if (-not (Test-Path -LiteralPath $categoryPath)) {
-                New-Item -Path $categoryPath -ItemType Directory -Force | Out-Null
+                [System.IO.Directory]::CreateDirectory($categoryPath) | Out-Null
             }
 
             $destPath = Join-Path $categoryPath (Split-Path $item.FullPath -Leaf)
@@ -4521,7 +4528,7 @@ function Auto-OrganizeAll {
         try {
             $categoryPath = Join-Path $entry.BasePath $entry.Category
             if (-not (Test-Path -LiteralPath $categoryPath)) {
-                New-Item -Path $categoryPath -ItemType Directory -Force | Out-Null
+                [System.IO.Directory]::CreateDirectory($categoryPath) | Out-Null
             }
 
             $destPath = Join-Path $categoryPath $entry.Item.Name
@@ -4747,14 +4754,14 @@ function Find-Replace-Names {
     
     $selected = @(Get-SelectedItems | Where-Object { -not $_.IsFolder })
     if ($selected.Count -eq 0) {
-        $selected = @($script:AllItems | Where-Object { -not $_.IsFolder -and $_.DisplayName -like "*$findText*" })
+        $selected = @($script:AllItems | Where-Object { -not $_.IsFolder -and $_.DisplayName.Contains($findText) })
     }
-    
+
     $isPreview = $chkPreviewMode.IsChecked
     $toRename = @()
-    
+
     foreach ($item in $selected) {
-        if ($item.DisplayName -like "*$findText*") {
+        if ($item.DisplayName.Contains($findText)) {
             $newName = $item.DisplayName -replace [regex]::Escape($findText), $replaceText
             if ($newName -ne $item.DisplayName -and -not [string]::IsNullOrEmpty($newName)) {
                 $toRename += @{
