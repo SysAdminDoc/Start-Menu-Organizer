@@ -166,8 +166,7 @@ Add-Type -AssemblyName PresentationCore
 Add-Type -AssemblyName WindowsBase
 Add-Type -AssemblyName System.Windows.Forms
 
-# Shell COM object for reading shortcut targets
-$script:WScriptShell = New-Object -ComObject WScript.Shell
+$script:WScriptShell = $null
 
 # ============================================================================
 # XAML INTERFACE
@@ -5699,29 +5698,26 @@ $btnElevate.Add_Click({
     }
 })
 
-# Ensure config directory exists
-$configDir = Split-Path $Config.ConfigFile -Parent
-if (-not (Test-Path -LiteralPath $configDir)) {
-    New-Item -Path $configDir -ItemType Directory -Force | Out-Null
-}
-Initialize-FileLogging | Out-Null
-Register-UnhandledExceptionHandlers
-Load-ApplicationConfiguration
-Load-UndoJournal
-
-# Populate UI
-Refresh-CategoryUI
-Refresh-JunkPatternsUI
-Refresh-CategoryPatternsUI
-
-# Initial scan
-Refresh-Items
-Write-Log "Start Menu Organizer v$($Config.Version) initialized" 'Success'
-Write-Log "File log: $script:LogFilePath" 'Info'
-Write-Log "Keyboard shortcuts: Del=Delete, Ctrl+A=Select All, Ctrl+Z=Undo, Ctrl+F=Search, F5=Refresh" 'Info'
-
-# Show window
+$script:WScriptShell = New-Object -ComObject WScript.Shell
 try {
+    $configDir = Split-Path $Config.ConfigFile -Parent
+    if (-not (Test-Path -LiteralPath $configDir)) {
+        New-Item -Path $configDir -ItemType Directory -Force | Out-Null
+    }
+    Initialize-FileLogging | Out-Null
+    Register-UnhandledExceptionHandlers
+    Load-ApplicationConfiguration
+    Load-UndoJournal
+
+    Refresh-CategoryUI
+    Refresh-JunkPatternsUI
+    Refresh-CategoryPatternsUI
+
+    Refresh-Items
+    Write-Log "Start Menu Organizer v$($Config.Version) initialized" 'Success'
+    Write-Log "File log: $script:LogFilePath" 'Info'
+    Write-Log "Keyboard shortcuts: Del=Delete, Ctrl+A=Select All, Ctrl+Z=Undo, Ctrl+F=Search, F5=Refresh" 'Info'
+
     $Window.ShowDialog() | Out-Null
 }
 catch {
