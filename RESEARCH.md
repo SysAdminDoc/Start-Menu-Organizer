@@ -1,85 +1,87 @@
-# Research - Start Menu Organizer
+# Research — Start Menu Organizer
 
 ## Executive Summary
-Start Menu Organizer is a Windows 10/11 PowerShell 5.1 WPF utility for scanning Start Menu folders, detecting junk/broken/duplicate shortcuts, flattening folders, categorizing shortcuts, renaming entries, and backing up/restoring the menu. Its strongest shape is a focused local cleaner with a rich GUI and no runtime dependencies, but the highest-value direction is trust: convert every destructive operation into an auditable plan with persistent rollback, safe restore semantics, async workers, tests, and a packaged release. Top opportunities: fail-closed restore, persistent action journal, transaction preview/plan/export, async scan/action execution, real settings persistence, protected-folder/category rules, Pester/PSScriptAnalyzer coverage, installable artifact, and accessibility/i18n cleanup.
+Start Menu Organizer is a Windows PowerShell 5.1/WPF utility for auditing, previewing, backing up, and safely reorganizing user/system/profile Start Menu shortcut folders. Verified: the current app has the right shape for a local trust-first cleaner: background scans, editable operation plans, rollback journals, protected system folders, structured JSONL logs, accessibility/localization metadata, profile/default-user targeting, and a zip release package. Highest-value direction: harden the filesystem and shortcut-inspection trust boundary before adding broader automation. Top opportunities: reparse-point protection, full `.lnk`/`.url` metadata risk classification, Known Folder API path resolution, atomic state writes, release integrity/signing, human-readable audit exports, package-manager shortcut resurrection handling, configurable rule presets, runtime UI/a11y smoke tests, and elevated relaunch.
 
 ## Product Map
-- Core workflows: scan user/system Start Menu folders; filter/search/sort entries; delete junk/broken/duplicate shortcuts; flatten or categorize folders; batch rename shortcuts; backup and restore Start Menu contents.
-- User personas: Windows power users cleaning installer clutter; IT admins standardizing local machines; users recovering from stale uninstall/help/update shortcuts; maintainers shipping a small no-dependency tool.
-- Platforms and distribution: Windows 10/11, Windows PowerShell 5.1+, WPF/XAML in `StartMenuOrganizerPro.ps1`; README currently ships source-script execution only, no signed package or release artifact.
-- Key integrations and data flows: `%APPDATA%\Microsoft\Windows\Start Menu\Programs`, `%ProgramData%\Microsoft\Windows\Start Menu\Programs`, WScript.Shell COM shortcut parsing, `%LOCALAPPDATA%\StartMenuOrganizerPro\Backups`, JSON config export/import.
+- Core workflows: scan Start Menu scopes, classify shortcuts/folders, preview/edit an operation plan, execute guarded moves/deletes/restores, inspect logs/history.
+- User personas: Windows power user cleaning installer clutter, technician standardizing a machine, admin preparing default/profile menus, accessibility-conscious user needing predictable UI labels.
+- Platforms and distribution: Windows 10/11 desktop; Windows PowerShell 5.1; WPF; local zip package from `tools/Build-Release.ps1`; no runtime package dependency beyond built-in Windows assemblies and `WScript.Shell`.
+- Key integrations and data flows: Start Menu filesystem roots in `%APPDATA%`, `%PROGRAMDATA%`, profile/default-user folders; `.lnk`, `.url`, `.appref-ms` shortcuts; `%LOCALAPPDATA%\StartMenuOrganizerPro` config, backup, undo journal, localization override, and JSONL logs.
 
 ## Competitive Landscape
-- Start Menu Helper: closest OSS peer with installer generation, startup/background cleaning, explicit backup warnings, folder/name/file-type rules, duplicate/broken-link deletion, and setup scripts. Learn packaged install and durable options; avoid unattended recurring cleanup until rollback is stronger.
-- windows-shortcut-organizer: uses a three-phase scan/classify/organize pipeline with editable JSON artifacts, dry-run, idempotency, desktop plus Start Menu sources, and priority-ordered rules. Learn inspectable plan files and deterministic idempotent operations; avoid CLI-only UX as the primary experience.
-- ClearWinStart: offers preview mode, dry-run, config wizard, file logging with rotation, preserved system folders, validation-only mode, tests, type hints, and a Python API. Learn protected folder defaults, logging, and testable core separation; avoid emoji/Unicode UI text for PowerShell 5.1 compatibility.
-- Win11Debloat: demonstrates that PowerShell Windows-maintenance tools benefit from CLI parameters, applying settings to other users/default profiles, reversible changes, wiki docs, and no-install usage. Learn script parameterization and profile targeting; avoid broad OS tweaking that dilutes this repo's Start Menu focus.
-- Open-Shell Menu: mature Start Menu replacement with releases, localization assets, ARM warnings, discussions, and large community signal. Learn release discipline, compatibility warnings, and localization pipeline; avoid shell replacement and explorer hooking.
-- ExplorerPatcher: emphasizes installer/uninstaller/update flows, architecture-specific builds, elevated setup, and clear recovery/uninstall paths. Learn install/update/recovery clarity; avoid modifying Explorer behavior.
-- Start11/StartAllBack/Start Menu X: commercial tools compete on polished layout control, grouping, search, backup/import/export, and Windows 11 restoration. Learn UX polish and backup/import value; avoid paid-shell-level customization creep.
-- PowerToys Run: adjacent launcher with plugin architecture and searchable workflows. Learn extensible matching/search patterns; avoid turning this cleaner into a launcher.
+- Start Menu Helper: does continuous cleaning, backup prompts, setup install, and folder flattening well. Learn from its install/setup and configurable cleanup modes; avoid unattended mutation until Start Menu Organizer has stronger provenance, reparse, and shortcut-risk safeguards.
+- Start Menu Cleaner: small focused cleaner with executable release, CLI options, logging, and shortcut edit/create support. Learn from the CLI/reporting path; avoid packaging patterns that increase AV friction.
+- Start-Menu-Manager: uses WPF, MSI packaging, JSON shortcut definitions, console builder, custom icons, and uninstall cleanup. Learn from portable shortcut schemas and MSI-style install polish; avoid turning this cleaner into a shortcut-authoring suite before metadata preservation is robust.
+- Open-Shell, ExplorerPatcher, StartAllBack, and Windhawk: prove demand for deep Start/taskbar customization and compatibility tracking after Windows updates. Learn from explicit compatibility/release notes and modular customization; intentionally avoid shell replacement, Explorer injection, and system hooking.
+- Start11: makes backup/restore, role/kiosk layouts, tabs/groups, and deployment scripting paid enterprise features. Learn from exportable configurations and fleet handoff; avoid paywall-style feature sprawl unrelated to local cleanup.
+- Start Menu X: virtual groups avoid real-folder drift after installs/upgrades/uninstalls. Learn from non-mutating previews; avoid replacing filesystem cleanup with a parallel launcher database.
+- PowerToys and Win11Debloat: show Windows utilities win trust with privacy posture, multiple install channels, explicit presets, and local-first execution. Learn from install/distribution clarity and preset discipline; avoid broad OS-debloat creep.
+- TileIconifier: demonstrates shortcut argument/icon metadata bugs in real Start workflows. Learn from preserving target arguments, icons, and metadata; avoid visual tile theming as a core roadmap item.
 
 ## Security, Privacy, and Reliability
-- `StartMenuOrganizerPro.ps1:2048` and `StartMenuOrganizerPro.ps1:2054` delete current Start Menu contents before copying backup files; a partial copy failure can leave the menu empty. Restore should stage, validate, and swap/copy with rollback.
-- `StartMenuOrganizerPro.ps1:34` defines `UndoFile`, but undo is only in-memory (`StartMenuOrganizerPro.ps1:80`, `StartMenuOrganizerPro.ps1:1306`); deleted-item recovery disappears after process exit and temp cleanup.
-- Bulk actions mutate files directly from UI event handlers (`StartMenuOrganizerPro.ps1:2254` through `StartMenuOrganizerPro.ps1:2265`) and scan synchronously (`StartMenuOrganizerPro.ps1:1106`), so large Start Menus can freeze the UI.
-- System-folder handling is only admin-skip logic (`StartMenuOrganizerPro.ps1:1320`, `StartMenuOrganizerPro.ps1:1476`, `StartMenuOrganizerPro.ps1:1594`) and lacks a preserved-folder allowlist like Accessories, Administrative Tools, Startup, and Windows PowerShell.
-- `Test-ShortcutBroken` only treats `.exe` targets as candidates (`StartMenuOrganizerPro.ps1:984`), so broken document/appref-ms/url/folder shortcuts are missed and some installer targets are under-classified.
-- `Set-Content -Encoding UTF8` on config export (`StartMenuOrganizerPro.ps1:2080`) adds a BOM in Windows PowerShell 5.1; acceptable for JSON but inconsistent with project memory guidance for PS 5.1 file writes.
-- PSScriptAnalyzer 1.25.0 reports state-changing functions without `ShouldProcess`, unused variables at `StartMenuOrganizerPro.ps1:2029` and `StartMenuOrganizerPro.ps1:2356`, and an automatic-variable assignment risk for `$sender` at `StartMenuOrganizerPro.ps1:2409`.
+- Verified risk: `StartMenuOrganizerPro.ps1` validates string paths with `Test-PathWithinRoot`, but recursive scan/copy/delete/restore paths do not explicitly block or neutralize reparse points before `Get-ChildItem -Recurse`, `Copy-Item -Recurse`, or `Remove-Item -Recurse` (`StartMenuOrganizerPro.ps1:2105`, `StartMenuOrganizerPro.ps1:2225`, `StartMenuOrganizerPro.ps1:2883`, `StartMenuOrganizerPro.ps1:4060`, `StartMenuOrganizerPro.ps1:4107`, `StartMenuOrganizerPro.ps1:4113`).
+- Verified risk: shortcut inspection reads only the target path for `.lnk` files and only the `URL=` line for `.url` files (`StartMenuOrganizerPro.ps1:1956`, `StartMenuOrganizerPro.ps1:1984`, `StartMenuOrganizerPro.ps1:2903`). Shell Link and AppUserModelID metadata include arguments, working directory, icon, description, property store, and AppUserModelID; recent LNK/Internet Shortcut CVEs and malware research make hidden arguments and crafted shortcuts a trust boundary.
+- Verified gap: release packaging uses `-ExecutionPolicy Bypass` in the generated Start Menu shortcut and emits no hash manifest or signing status (`tools/Build-Release.ps1:67`). PowerShell signing/execution-policy docs support adding Authenticode signing when a certificate is available and always publishing SHA256 verification data.
+- Verified gap: config, journal, and log writes use direct whole-file writes; invalid JSON handling exists, but writes are not atomic with a last-known-good backup (`StartMenuOrganizerPro.ps1:1273`, `StartMenuOrganizerPro.ps1:2276`, `StartMenuOrganizerPro.ps1:2562`, `StartMenuOrganizerPro.ps1:4379`).
+- Missing guardrails: suspicious shortcut classification, reparse-point reporting, release hash verification, provenance for shortcuts recreated by package managers, and recovery tests that simulate partial state-file writes.
+- Recovery and rollback needs: keep current backup/journal model, but add atomic writes, reportable skipped-risk items, and explicit rollback evidence for every guarded operation.
 
 ## Architecture Assessment
-- Split the single 2,468-line script into script module/core functions plus thin WPF launcher so scan/classify/plan/execute can be tested without opening a window.
-- Introduce a transaction model: scan returns inventory, classifier returns proposed operations, executor applies an operation list, journal persists before/after paths and backup copies.
-- Replace repeated direct `Remove-Item`/`Move-Item`/`Rename-Item` calls with one guarded file-operation layer using `-LiteralPath`, same-root validation, collision policy, and structured result objects.
-- Add async WPF workers using a background PowerShell/runspace plus dispatcher updates for scan and bulk actions; current progress bar does not prevent UI thread work.
-- Persist settings automatically to `$Config.ConfigFile`; current import/export is manual and app startup does not load saved config.
-- Add Pester fixtures that build temporary Start Menu trees and `.lnk` files, then exercise duplicate, broken, junk, flatten, rename, backup, restore, and config import/export behavior.
-- Add README and release docs for artifact installation, rollback, admin behavior, and compatibility limits; no changelog, ignore file, working-notes file, or packaging files exist, but this research pass updates only `RESEARCH.md` and `ROADMAP.md`.
+- Boundary improvement: split shortcut metadata extraction/risk classification out of UI scan flow into testable functions near `Get-ShortcutTarget` and `Test-ShortcutBroken`; expose structured fields to the DataGrid, JSONL log, plan JSON, and report export.
+- Boundary improvement: centralize filesystem traversal and mutation safety in one reparse-aware helper used by scan, backup, delete, move, rename, and restore paths; current guards are strong for string roots but not enough for link traversal.
+- Refactor candidate: replace hard-coded Start Menu/profile suffix construction in config and `Get-ProfileProgramsPath` with Known Folder API resolution plus safe fallbacks (`StartMenuOrganizerPro.ps1:32`, `StartMenuOrganizerPro.ps1:34`, `StartMenuOrganizerPro.ps1:1810`).
+- Refactor candidate: move rule/category/junk/protected-folder matching into an ordered rule engine with conflict diagnostics; current data tables are useful but not externally inspectable or preset-friendly (`StartMenuOrganizerPro.ps1:58`, `StartMenuOrganizerPro.ps1:72`, `StartMenuOrganizerPro.ps1:84`).
+- Test gap: `tests\Run-Tests.ps1` runs parser, Pester, and ScriptAnalyzer checks but has no coverage threshold, runtime WPF smoke, screenshot/visual-tree validation, or synthetic `.lnk` metadata fixtures.
+- Documentation gap: README covers setup and workflows, but not release verification, shortcut risk semantics, rule precedence, localization template validation, or admin/elevation behavior.
 
 ## Rejected Ideas
-- Full Start Menu replacement: Open-Shell, ExplorerPatcher, Start11, and StartAllBack already own that category; replacing the shell contradicts this repo's cleanup-only purpose.
-- Background auto-clean on startup before a durable journal: Start Menu Helper supports it, but unattended deletes are too risky while rollback is session-only.
-- Package-manager integration as a first milestone: winget/chocolatey/scoop shortcut cleanup signals are real, but the project first needs safe transactions and tests.
-- Launcher/search replacement: PowerToys Run covers extensible launch/search; Start Menu Organizer should remain a maintenance tool.
-- Cloud sync or multi-user fleet service: Win11Debloat-style profile targeting is useful later, but cloud/fleet sync is unnecessary for a local Start Menu cleaner.
+- Full shell replacement or Explorer/taskbar hooking: Open-Shell, ExplorerPatcher, StartAllBack, and Windhawk cover this space; it contradicts the local cleaner model and raises stability/security risk.
+- Always-on auto-cleaning as the next step: Start Menu Helper shows demand, but package updates recreate shortcuts and can conflict with user intent; provenance and safer rollback should land first.
+- Broad Windows debloat/privacy/AI toggles: Win11Debloat and similar utilities already own this; it would dilute Start Menu-specific cleanup and testing.
+- Tile/icon theming and custom launcher skinning: TileIconifier and Start11 already cover visual Start customization; this project should preserve metadata before creating new visual schemes.
+- Cloud sync or hosted multi-user service: commercial Start tools offer fleet controls, but this repository is a local PowerShell/WPF app; exportable bundles and policy handoff fit better.
+- Mobile support: no credible use case for a Windows Start Menu filesystem cleaner on mobile platforms.
+- Plugin marketplace: Windhawk and PowerToys show modular ecosystems, but Start Menu Organizer needs rule presets and import/export before accepting third-party extension code.
 
 ## Sources
-Direct OSS peers:
+Direct OSS and adjacent projects:
 - https://github.com/jarikmarwede/Start-Menu-Helper
-- https://github.com/qwerd53/windows-shortcut-organizer
-- https://github.com/RuanCH0924/ClearWinStart
-- https://github.com/Raphire/Win11Debloat
+- https://github.com/qwerty-w/start-menu-cleaner
+- https://github.com/James231/Start-Menu-Manager
 - https://github.com/Open-Shell/Open-Shell-Menu
 - https://github.com/valinet/ExplorerPatcher
+- https://github.com/Raphire/Win11Debloat
+- https://github.com/microsoft/PowerToys
+- https://github.com/Jonno12345/TileIconifier
+- https://github.com/ramensoftware/windhawk
 
-Commercial and adjacent tools:
-- https://www.stardock.com/products/start11/
+Commercial and closed-source:
+- https://www.stardock.com/blog/523496/introducing-start11-v2
 - https://www.startallback.com/
 - https://www.startmenux.com/
-- https://learn.microsoft.com/en-us/windows/powertoys/run
+- https://www.startmenux.com/help/Virtual%20Groups.html
 
-Platform and standards:
+Platform, standards, and security:
 - https://learn.microsoft.com/en-us/windows/configuration/start/layout
-- https://learn.microsoft.com/en-us/windows/win32/shell/links
-- https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-ishelllinkw
 - https://learn.microsoft.com/en-us/windows/win32/shell/knownfolderid
+- https://learn.microsoft.com/en-us/windows/win32/api/shlobj_core/nf-shlobj_core-shgetknownfolderpath
+- https://learn.microsoft.com/en-us/windows/win32/shell/links
+- https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-shllink/a6c2f32d-2297-4727-bcd3-5d3669573bcb
+- https://learn.microsoft.com/en-us/windows/win32/shell/appids
+- https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_signing
 - https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_execution_policies
+- https://nvd.nist.gov/vuln/detail/CVE-2025-9491
+- https://nvd.nist.gov/vuln/detail/CVE-2025-33053
+- https://www.trendmicro.com/en_us/research/25/c/windows-shortcut-zero-day-exploit.html
 
-Testing, analysis, and packaging:
-- https://github.com/PowerShell/PSScriptAnalyzer
-- https://github.com/pester/Pester
-- https://learn.microsoft.com/en-us/powershell/scripting/dev-cross-plat/create-standard-library-binary-module
-- https://jrsoftware.org/isinfo.php
-- https://pyinstaller.org/en/stable/
-
-Community and package-manager signals:
-- https://github.com/microsoft/winget-cli
-- https://github.com/chocolatey/choco
-- https://github.com/ScoopInstaller/Scoop
-- https://github.com/ValveSoftware/steam-for-linux
-- https://github.com/Heroic-Games-Launcher/HeroicGamesLauncher
+Community, package managers, and testing:
+- https://github.com/chocolatey/choco/issues/2016
+- https://github.com/ScoopInstaller/Scoop/issues/4562
+- https://www.reddit.com/r/Windows10/comments/zgtpkg/anyone_know_how_to_export_or_backup_a_windows/
+- https://www.reddit.com/r/Windows11/comments/1rcrt5z/start_menu_remove_the_all_section_with_categories/
+- https://github.com/PowerShell/PowerShell/issues/621
+- https://pester.dev/docs/usage/code-coverage
 
 ## Open Questions
-- Should the first packaged artifact be a signed `.ps1` plus launcher shortcut, a PS2EXE/PyInstaller-style executable, or an installer built with Inno Setup?
-- Should system Start Menu changes require launching elevated up front, or should the app keep user-scope functionality available and gate only system-scope operations?
+- Needs live validation: which Windows 10/11 builds in the supported range expose redirected or localized Start Menu Known Folder paths differently from the current hard-coded path fallbacks?
