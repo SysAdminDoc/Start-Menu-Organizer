@@ -2191,7 +2191,7 @@ function Get-ShortcutRiskFlags {
         $flags += 'ScriptHost'
     }
 
-    if ($target -match '\\\\' -or $target -match '^\\\\') {
+    if ($target -match '^\\\\') {
         $flags += 'NetworkTarget'
     }
 
@@ -2658,14 +2658,20 @@ function Write-AtomicFile {
     }
 
     $tmpPath = "$Path.tmp"
-    [System.IO.File]::WriteAllText($tmpPath, $Content, [System.Text.UTF8Encoding]::new($false))
+    try {
+        [System.IO.File]::WriteAllText($tmpPath, $Content, [System.Text.UTF8Encoding]::new($false))
 
-    if (Test-Path -LiteralPath $Path) {
-        $bakPath = "$Path.bak"
-        Copy-Item -LiteralPath $Path -Destination $bakPath -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $Path) {
+            $bakPath = "$Path.bak"
+            Copy-Item -LiteralPath $Path -Destination $bakPath -Force -ErrorAction SilentlyContinue
+        }
+
+        Move-Item -LiteralPath $tmpPath -Destination $Path -Force
     }
-
-    Move-Item -LiteralPath $tmpPath -Destination $Path -Force
+    catch {
+        Remove-Item -LiteralPath $tmpPath -Force -ErrorAction SilentlyContinue
+        throw
+    }
 }
 
 function Read-WithBackupFallback {
@@ -3365,7 +3371,7 @@ function Refresh-Items {
                 $flags += 'ScriptHost'
             }
 
-            if ($target -match '\\\\' -or $target -match '^\\\\') {
+            if ($target -match '^\\\\') {
                 $flags += 'NetworkTarget'
             }
 
@@ -3568,9 +3574,10 @@ function Apply-Filters {
     foreach ($item in $script:AllItems) {
         # Search filter
         if (-not [string]::IsNullOrEmpty($searchText)) {
-            if (-not ($item.DisplayName.ToLower().Contains($searchText) -or 
-                      $item.RelativePath.ToLower().Contains($searchText) -or
-                      $item.TargetPath.ToLower().Contains($searchText))) {
+            $nameMatch = $item.DisplayName -and $item.DisplayName.ToLower().Contains($searchText)
+            $pathMatch = $item.RelativePath -and $item.RelativePath.ToLower().Contains($searchText)
+            $targetMatch = $item.TargetPath -and $item.TargetPath.ToLower().Contains($searchText)
+            if (-not ($nameMatch -or $pathMatch -or $targetMatch)) {
                 continue
             }
         }
@@ -3938,7 +3945,7 @@ function Delete-SelectedItems {
                 continue
             }
             
-            if (Test-Path $item.FullPath) {
+            if (Test-Path -LiteralPath $item.FullPath) {
                 $undoItems += Invoke-JournaledDelete -Path $item.FullPath -OperationId $operationId
                 Write-Log "Deleted: $($item.DisplayName)" 'Success'
                 $deleted++
@@ -3990,8 +3997,10 @@ function Remove-AllJunk {
     )
     
     if ($result -ne 'Yes') { return }
-    
+
+    foreach ($item in $script:AllItems) { $item.IsSelected = $false }
     foreach ($item in $junkItems) { $item.IsSelected = $true }
+    Apply-Filters
     $dgItems.Items.Refresh()
     Delete-SelectedItems
 }
@@ -4023,8 +4032,10 @@ function Remove-BrokenShortcuts {
     )
     
     if ($result -ne 'Yes') { return }
-    
+
+    foreach ($item in $script:AllItems) { $item.IsSelected = $false }
     foreach ($item in $brokenItems) { $item.IsSelected = $true }
+    Apply-Filters
     $dgItems.Items.Refresh()
     Delete-SelectedItems
 }
@@ -4086,7 +4097,7 @@ function Flatten-SingleItemFolders {
         $basePath = $scope.Path
         if ($scope.RequiresAdmin -and -not $script:IsAdmin) { continue }
 
-        $folders = Get-ChildItem -Path $basePath -Directory -ErrorAction SilentlyContinue
+        $folders = Get-ChildItem -LiteralPath $basePath -Directory -ErrorAction SilentlyContinue
 
         foreach ($folder in $folders) {
             if (Test-ProtectedFolder -Path $folder.FullName -BasePath $basePath) {
@@ -4094,8 +4105,8 @@ function Flatten-SingleItemFolders {
                 continue
             }
 
-            $contents = Get-ChildItem -Path $folder.FullName -File -Filter "*.lnk" -ErrorAction SilentlyContinue
-            $subfolders = Get-ChildItem -Path $folder.FullName -Directory -ErrorAction SilentlyContinue
+            $contents = Get-ChildItem -LiteralPath $folder.FullName -File -Filter "*.lnk" -ErrorAction SilentlyContinue
+            $subfolders = Get-ChildItem -LiteralPath $folder.FullName -Directory -ErrorAction SilentlyContinue
             
             if ($contents.Count -eq 1 -and $subfolders.Count -eq 0) {
                 $toFlatten += @{
@@ -4116,7 +4127,7 @@ function Flatten-SingleItemFolders {
         $operations = @()
         foreach ($item in $toFlatten) {
             $destPath = Join-Path $item.BasePath $item.Shortcut.Name
-            if (Test-Path $destPath) {
+            if (Test-Path -LiteralPath $destPath) {
                 $destPath = Join-Path $item.BasePath "$($item.Folder.Name) - $($item.Shortcut.Name)"
             }
             $operations += New-PlanOperation -Action 'Move' -SourcePath $item.Shortcut.FullName -DestinationPath $destPath -DisplayName $item.Shortcut.Name
@@ -4144,7 +4155,7 @@ function Flatten-SingleItemFolders {
         try {
             $destPath = Join-Path $item.BasePath $item.Shortcut.Name
 
-            if (Test-Path $destPath) {
+            if (Test-Path -LiteralPath $destPath) {
                 $destPath = Join-Path $item.BasePath "$($item.Folder.Name) - $($item.Shortcut.Name)"
             }
 
@@ -4177,16 +4188,16 @@ function Remove-EmptyFolders {
         $basePath = $scope.Path
         if ($scope.RequiresAdmin -and -not $script:IsAdmin) { continue }
         
-        $folders = Get-ChildItem -Path $basePath -Directory -Recurse -ErrorAction SilentlyContinue | 
+        $folders = Get-ChildItem -LiteralPath $basePath -Directory -Recurse -ErrorAction SilentlyContinue |
                    Sort-Object { $_.FullName.Length } -Descending
-        
+
         foreach ($folder in $folders) {
             if (Test-ProtectedFolder -Path $folder.FullName -BasePath $basePath) {
                 Write-Log "Skipped protected folder: $($folder.Name)" 'Warning'
                 continue
             }
 
-            $contents = Get-ChildItem -Path $folder.FullName -Force -ErrorAction SilentlyContinue
+            $contents = Get-ChildItem -LiteralPath $folder.FullName -Force -ErrorAction SilentlyContinue
             if ($contents.Count -eq 0) {
                 $emptyFolders += $folder
             }
@@ -4242,8 +4253,8 @@ function Move-AllToRoot {
         $basePath = $scope.Path
         if ($scope.RequiresAdmin -and -not $script:IsAdmin) { continue }
         
-        # Get all shortcuts that are NOT in the root directory
-        Get-ChildItem -Path $basePath -Recurse -Filter "*.lnk" -ErrorAction SilentlyContinue | ForEach-Object {
+        Get-ChildItem -LiteralPath $basePath -Recurse -Force -ErrorAction SilentlyContinue |
+            Where-Object { -not $_.PSIsContainer -and $_.Extension -in @('.lnk', '.url', '.appref-ms') } | ForEach-Object {
             if (Test-ProtectedFolder -Path $_.FullName -BasePath $basePath) {
                 Write-Log "Skipped protected shortcut: $($_.BaseName)" 'Warning'
                 return
@@ -4259,7 +4270,7 @@ function Move-AllToRoot {
             }
         }
     }
-    
+
     if ($toMove.Count -eq 0) {
         [System.Windows.MessageBox]::Show("No shortcuts found in folders to move.", "Info", "OK", "Information")
         return
@@ -4269,7 +4280,7 @@ function Move-AllToRoot {
         $operations = @()
         foreach ($entry in $toMove) {
             $destPath = Join-Path $entry.BasePath $entry.Item.Name
-            if (Test-Path $destPath) {
+            if (Test-Path -LiteralPath $destPath) {
                 $existingTarget = Get-ShortcutTarget $destPath
                 $newTarget = Get-ShortcutTarget $entry.Item.FullName
                 if ($existingTarget -eq $newTarget) {
@@ -4283,7 +4294,7 @@ function Move-AllToRoot {
                 do {
                     $destPath = Join-Path $entry.BasePath "$baseName ($counter)$ext"
                     $counter++
-                } while (Test-Path $destPath)
+                } while (Test-Path -LiteralPath $destPath)
             }
 
             $operations += New-PlanOperation -Action 'Move' -SourcePath $entry.Item.FullName -DestinationPath $destPath -DisplayName $entry.Item.BaseName
@@ -4320,7 +4331,7 @@ function Move-AllToRoot {
             $destPath = Join-Path $entry.BasePath $entry.Item.Name
             
             # Handle name collision
-            if (Test-Path $destPath) {
+            if (Test-Path -LiteralPath $destPath) {
                 # Check if it's pointing to the same target
                 $existingTarget = Get-ShortcutTarget $destPath
                 $newTarget = Get-ShortcutTarget $entry.Item.FullName
@@ -4340,7 +4351,7 @@ function Move-AllToRoot {
                 do {
                     $destPath = Join-Path $entry.BasePath "$baseName ($counter)$ext"
                     $counter++
-                } while (Test-Path $destPath)
+                } while (Test-Path -LiteralPath $destPath)
             }
 
             $journalItems += Invoke-JournaledMove -SourcePath $entry.Item.FullName -DestinationPath $destPath -OperationId $operationId
@@ -4369,7 +4380,12 @@ function Move-AllToRoot {
 
 function Move-ToCategory {
     param([string]$CategoryName)
-    
+
+    if ([string]::IsNullOrWhiteSpace($CategoryName)) {
+        [System.Windows.MessageBox]::Show("No category selected.", "Info", "OK", "Information")
+        return
+    }
+
     $selected = @(Get-SelectedItems | Where-Object { -not $_.IsFolder })
     if ($selected.Count -eq 0) {
         [System.Windows.MessageBox]::Show("No shortcuts selected.", "Info", "OK", "Information")
@@ -4410,7 +4426,7 @@ function Move-ToCategory {
         $destPath = $null
         try {
             $categoryPath = Join-Path $item.BasePath $CategoryName
-            if (-not (Test-Path $categoryPath)) {
+            if (-not (Test-Path -LiteralPath $categoryPath)) {
                 New-Item -Path $categoryPath -ItemType Directory -Force | Out-Null
             }
 
@@ -4442,7 +4458,8 @@ function Auto-OrganizeAll {
         $basePath = $scope.Path
         if ($scope.RequiresAdmin -and -not $script:IsAdmin) { continue }
         
-        Get-ChildItem -Path $basePath -Recurse -Filter "*.lnk" -ErrorAction SilentlyContinue | ForEach-Object {
+        Get-ChildItem -LiteralPath $basePath -Recurse -Force -ErrorAction SilentlyContinue |
+            Where-Object { -not $_.PSIsContainer -and $_.Extension -in @('.lnk', '.url', '.appref-ms') } | ForEach-Object {
             if (Test-ProtectedFolder -Path $_.FullName -BasePath $basePath) {
                 Write-Log "Skipped protected shortcut: $($_.BaseName)" 'Warning'
                 return
@@ -4503,12 +4520,12 @@ function Auto-OrganizeAll {
         $destPath = $null
         try {
             $categoryPath = Join-Path $entry.BasePath $entry.Category
-            if (-not (Test-Path $categoryPath)) {
+            if (-not (Test-Path -LiteralPath $categoryPath)) {
                 New-Item -Path $categoryPath -ItemType Directory -Force | Out-Null
             }
 
             $destPath = Join-Path $categoryPath $entry.Item.Name
-            if (-not (Test-Path $destPath)) {
+            if (-not (Test-Path -LiteralPath $destPath)) {
                 $journalItems += Invoke-JournaledMove -SourcePath $entry.Item.FullName -DestinationPath $destPath -OperationId $operationId
                 Write-Log "Organized: $($entry.Item.BaseName) -> $($entry.Category)" 'Success'
                 $organized++
@@ -4605,7 +4622,7 @@ function Strip-VersionNumbers {
             $ext = [System.IO.Path]::GetExtension($entry.Item.FullPath)
             $newPath = Join-Path (Split-Path $entry.Item.FullPath -Parent) "$($entry.NewName)$ext"
 
-            if (-not (Test-Path $newPath)) {
+            if (-not (Test-Path -LiteralPath $newPath)) {
                 $journalItems += Invoke-JournaledRename -SourcePath $entry.Item.FullPath -NewName "$($entry.NewName)$ext" -OperationId $operationId
                 Write-Log "Renamed: '$($entry.Item.DisplayName)' -> '$($entry.NewName)'" 'Success'
                 $renamed++
@@ -4699,7 +4716,7 @@ function Clean-Names {
             $ext = [System.IO.Path]::GetExtension($entry.Item.FullPath)
             $newPath = Join-Path (Split-Path $entry.Item.FullPath -Parent) "$($entry.NewName)$ext"
 
-            if (-not (Test-Path $newPath)) {
+            if (-not (Test-Path -LiteralPath $newPath)) {
                 $journalItems += Invoke-JournaledRename -SourcePath $entry.Item.FullPath -NewName "$($entry.NewName)$ext" -OperationId $operationId
                 Write-Log "Cleaned: '$($entry.Item.DisplayName)' -> '$($entry.NewName)'" 'Success'
                 $renamed++
@@ -5227,8 +5244,24 @@ function Reset-Configuration {
         '*feedback*', '*update*', '*check for update*'
     ) | ForEach-Object { $script:JunkPatterns.Add($_) }
 
+    $script:Categories = [ordered]@{
+        'Development'    = @('Visual Studio*', 'VS Code*', 'Code*', 'Git*', 'GitHub*', 'Python*', 'Node*', 'npm*', 'PowerShell*', 'Terminal*', 'Notepad++*', 'Sublime*', 'JetBrains*', 'Android Studio*', 'Eclipse*', 'NetBeans*', 'Arduino*', 'Docker*', 'Postman*', 'Insomnia*', 'MySQL*', 'PostgreSQL*', 'MongoDB*', 'Redis*', 'SQL Server*', 'Azure*', 'AWS*', 'Cursor*', 'Windsurf*', 'SSMS*', 'Management Studio*', 'HeidiSQL*', 'DBeaver*')
+        'Browsers'       = @('Google Chrome*', 'Chrome*', 'Firefox*', 'Mozilla*', 'Edge*', 'Opera*', 'Brave*', 'Vivaldi*', 'Tor*', 'Waterfox*', 'LibreWolf*', 'Zen*', 'Arc*', 'Floorp*')
+        'Communication'  = @('Discord*', 'Slack*', 'Teams*', 'Zoom*', 'Skype*', 'Telegram*', 'WhatsApp*', 'Signal*', 'Outlook*', 'Thunderbird*', 'Mail*', 'Messages*', 'Element*', 'Webex*', 'GoTo*', 'Beeper*', 'Ferdium*')
+        'Media'          = @('VLC*', 'Media Player*', 'Spotify*', 'iTunes*', 'Music*', 'Audacity*', 'OBS*', 'Handbrake*', 'FFmpeg*', 'Plex*', 'Kodi*', 'foobar*', 'AIMP*', 'Winamp*', 'MusicBee*', 'MediaMonkey*', 'Jellyfin*', 'mpv*', 'PotPlayer*', 'MPC-*', 'Stremio*', 'Tidal*', 'Deezer*', 'Amazon Music*', 'Apple Music*')
+        'Graphics'       = @('Photoshop*', 'GIMP*', 'Paint*', 'Illustrator*', 'Inkscape*', 'Blender*', 'SketchUp*', 'AutoCAD*', 'Figma*', 'Canva*', 'Affinity*', 'CorelDRAW*', 'Krita*', 'Lightroom*', 'DaVinci*', 'Premiere*', 'After Effects*', 'Final Cut*', 'ShareX*', 'Greenshot*', 'Snagit*', 'IrfanView*', 'XnView*', 'FastStone*', 'Flameshot*', 'Clip Studio*', 'Aseprite*')
+        'Office'         = @('Word*', 'Excel*', 'PowerPoint*', 'OneNote*', 'Access*', 'Publisher*', 'Visio*', 'Project*', 'LibreOffice*', 'OpenOffice*', 'WPS*', 'Acrobat*', 'PDF*', 'Foxit*', 'SumatraPDF*', 'Nitro*', 'Notion*', 'Obsidian*', 'Evernote*', 'Joplin*', 'Standard Notes*', 'Logseq*', 'Craft*', 'Coda*')
+        'Utilities'      = @('7-Zip*', 'WinRAR*', 'WinZip*', 'PeaZip*', 'CCleaner*', 'Revo*', 'IObit*', 'Malwarebytes*', 'Everything*', 'Wox*', 'PowerToys*', 'AutoHotkey*', 'TreeSize*', 'WizTree*', 'SpaceSniffer*', 'HWiNFO*', 'CPU-Z*', 'GPU-Z*', 'CrystalDisk*', 'Speccy*', 'AIDA64*', 'Rufus*', 'Etcher*', 'Ventoy*', 'ImgBurn*', 'AnyDesk*', 'TeamViewer*', 'RustDesk*', 'Parsec*', 'Barrier*', 'Synergy*', 'KeePass*', 'Bitwarden*', '1Password*', 'LastPass*', 'Dashlane*', 'Flow Launcher*', 'Keypirinha*', 'Listary*', 'Directory Opus*', 'Total Commander*', 'Bulk Rename*', 'Advanced Renamer*')
+        'Gaming'         = @('Steam*', 'Epic Games*', 'GOG*', 'Origin*', 'EA *', 'Ubisoft*', 'Battle.net*', 'Riot*', 'Xbox*', 'PlayStation*', 'GeForce*', 'NVIDIA*', 'AMD *', 'Radeon*', 'MSI Afterburner*', 'RTSS*', 'Playnite*', 'LaunchBox*', 'Retroarch*', 'Moonlight*', 'Sunshine*', 'Game Bar*', 'Heroic*', 'Lutris*', 'itch*', 'Prism Launcher*', 'MultiMC*')
+        'System'         = @('Control Panel*', 'Settings*', 'Device Manager*', 'Task Manager*', 'Registry*', 'Services*', 'Event Viewer*', 'Computer Management*', 'Disk Management*', 'System Information*', 'Resource Monitor*', 'Performance Monitor*', 'Windows Admin*', 'Administrative*', 'Command Prompt*', 'cmd*', 'Remote Desktop*', 'Hyper-V*', 'VMware*', 'VirtualBox*', 'WSL*', 'Linux*', 'Sysinternals*', 'Process Explorer*', 'Process Monitor*', 'Autoruns*')
+        'Security'       = @('Windows Security*', 'Defender*', 'Firewall*', 'Antivirus*', 'Norton*', 'McAfee*', 'Kaspersky*', 'Avast*', 'AVG*', 'ESET*', 'Bitdefender*', 'Webroot*', 'Comodo*', 'Sophos*', 'F-Secure*', 'Trend Micro*', 'Wireshark*', 'Nmap*', 'Burp*', 'GlassWire*', 'Simplewall*', 'PortMaster*')
+        'Networking'     = @('PuTTY*', 'WinSCP*', 'FileZilla*', 'Cyberduck*', 'mRemoteNG*', 'MobaXterm*', 'Royal TS*', 'Termius*', 'Angry IP*', 'Advanced IP*', 'NetSetMan*', 'OpenVPN*', 'WireGuard*', 'NordVPN*', 'ExpressVPN*', 'ProtonVPN*', 'Mullvad*', 'Tailscale*', 'ZeroTier*')
+    }
+
     Save-ApplicationConfiguration
     Refresh-JunkPatternsUI
+    Refresh-CategoryUI
+    Refresh-CategoryPatternsUI
     Write-Log "Configuration reset to defaults" 'Success'
     Refresh-Items
 }
@@ -5410,7 +5443,7 @@ $btnUndo.Add_Click({ Invoke-Undo })
 $btnOpenUserMenu.Add_Click({ Start-Process explorer.exe -ArgumentList $Config.UserStartMenu })
 $btnOpenSystemMenu.Add_Click({ Start-Process explorer.exe -ArgumentList $Config.SystemStartMenu })
 $btnOpenBackups.Add_Click({
-    if (-not (Test-Path $Config.BackupRoot)) {
+    if (-not (Test-Path -LiteralPath $Config.BackupRoot)) {
         New-Item -Path $Config.BackupRoot -ItemType Directory -Force | Out-Null
     }
     Start-Process explorer.exe -ArgumentList $Config.BackupRoot
@@ -5501,7 +5534,7 @@ $ctxOpenLocation.Add_Click({
 $ctxOpenTarget.Add_Click({
     $selected = $dgItems.SelectedItem
     if ($selected -and -not [string]::IsNullOrEmpty($selected.TargetPath)) {
-        if (Test-Path $selected.TargetPath) {
+        if (Test-Path -LiteralPath $selected.TargetPath) {
             Start-Process explorer.exe -ArgumentList "/select,`"$($selected.TargetPath)`""
         }
         else {
@@ -5595,14 +5628,18 @@ else {
     $btnElevate.Visibility = 'Visible'
 }
 
+$script:ScriptFilePath = $MyInvocation.MyCommand.Path
+if ([string]::IsNullOrWhiteSpace($script:ScriptFilePath)) {
+    $script:ScriptFilePath = $PSCommandPath
+}
 $btnElevate.Add_Click({
     try {
-        $scriptPath = $MyInvocation.ScriptName
-        if ([string]::IsNullOrWhiteSpace($scriptPath)) {
-            $scriptPath = $PSCommandPath
+        if ([string]::IsNullOrWhiteSpace($script:ScriptFilePath)) {
+            Write-Log "Cannot determine script path for elevation." 'Error'
+            return
         }
         Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
-            -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`"" `
+            -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$script:ScriptFilePath`"" `
             -Verb RunAs
         $Window.Close()
     }
@@ -5613,7 +5650,7 @@ $btnElevate.Add_Click({
 
 # Ensure config directory exists
 $configDir = Split-Path $Config.ConfigFile -Parent
-if (-not (Test-Path $configDir)) {
+if (-not (Test-Path -LiteralPath $configDir)) {
     New-Item -Path $configDir -ItemType Directory -Force | Out-Null
 }
 Initialize-FileLogging | Out-Null
