@@ -15,7 +15,7 @@
     - Preview mode
     - Import/Export configuration
 .NOTES
-    Author: Matt | Maven Imaging
+    Author: SysAdminDoc
     Requires: Windows 10/11, PowerShell 5.1+
     Run as Administrator for system-wide changes
 #>
