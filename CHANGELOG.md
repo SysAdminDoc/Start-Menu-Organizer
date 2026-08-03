@@ -1,5 +1,42 @@
 # Changelog
 
+## v0.14.0 - 2026-07-01
+
+### Features
+- Full shortcut metadata extraction (target, arguments, working dir, description, hotkey, icon) for `.lnk` and `.url` files.
+- Risk classification flags: ScriptHost, NetworkTarget, HiddenExecution, LongArguments, WebTarget, ScriptTarget.
+- Package-manager provenance detection (winget, Chocolatey, Scoop, MSIX, Installer).
+- Reparse-point (junction/symlink) traversal blocking in scans and mutations.
+- Atomic file writes with `.bak` fallback recovery for config and undo journal.
+- Known Folder API resolution via SHGetKnownFolderPath with safe fallbacks.
+- SHA256 manifest and optional Authenticode signing in release builds.
+- Scan report export as CSV or JSON.
+- Enterprise handoff export with deployment guidance.
+- Virtual grouping preview (non-mutating category organization preview).
+- Localization template export and completeness validation.
+- Unified rule evaluation engine with preset import/export.
+- Elevated relaunch button with capability status display.
+- Pester code coverage reporting (JaCoCo format).
+- winget, Chocolatey, and Scoop package metadata generation in builds.
+
+### Fixes (audit pass)
+- Fixed all action functions using `-Path` instead of `-LiteralPath` (wildcard characters in folder names could cause silent failures or wrong-path matches).
+- Fixed `Apply-Filters` null-safety for items with null TargetPath/DisplayName/RelativePath.
+- Fixed `Reset-Configuration` to actually reset categories (previously only reset junk patterns despite the dialog saying both).
+- Fixed `Remove-AllJunk` and `Remove-BrokenShortcuts` silently skipping items filtered out of the DataGrid view.
+- Fixed `Move-ToCategory` accepting null category name without validation.
+- Fixed `NetworkTarget` risk flag false positive on any path containing double backslashes (now only flags UNC paths).
+- Fixed `Flatten-SingleItemFolders` TOCTOU: now re-checks folder is empty after move before deleting.
+- Fixed `Write-AtomicFile` leaving orphan `.tmp` files on failure.
+- Fixed `Find-Replace-Names` using `-like` with user input containing wildcard characters.
+- Fixed COM shortcut object leaks in `Get-ShortcutTarget`, `Get-ShortcutMetadata`, and all worker equivalents.
+- Fixed elevation button using wrong script path when invoked from non-file scriptblocks.
+- Fixed imported operation plans not validating paths against approved mutation roots at import time.
+- Fixed missing `colRisk.Header` localization key.
+- Fixed `btnElevate` missing from tab order.
+- Fixed COM shortcut object leak in installer script.
+- Added atomic-write backup-fallback recovery regression test.
+
 ## v0.13.0 - 2026-06-30
 
 - Added Selected Profile and Default User scope options with explicit profile-root validation.
