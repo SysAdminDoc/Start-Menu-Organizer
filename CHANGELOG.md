@@ -125,3 +125,16 @@
 - Added fail-closed restore planning that stages backup contents, validates restore sources, and preserves pre-restore rollback snapshots before live Start Menu entries are replaced.
 - Added restore rollback-on-failure handling and warnings for skipped or partially failed restore scopes.
 - Added a local restore safety regression test and README test instructions.
+
+## Roadmap archive — 2026-08-10 — ROADMAP.md
+
+<details>
+<summary>Original roadmap snapshot</summary>
+
+```markdown
+# Roadmap
+
+No actionable items remain. See `Roadmap_Blocked.md` for items requiring external input.
+```
+
+</details>

@@ -1,3 +1,5 @@
 # Roadmap
 
-No actionable items remain. See `Roadmap_Blocked.md` for items requiring external input.
+Actionable work only. Historical and completed roadmap material is archived in CHANGELOG.md; blocked work is kept in Roadmap_Blocked.md.
+
+No actionable roadmap items remain.
