@@ -1,7 +1,7 @@
-# Research — Start Menu Organizer
+# Research: Start Menu Organizer
 
 ## Executive Summary
-Start Menu Organizer is a Windows PowerShell 5.1/WPF utility for auditing, previewing, backing up, and safely reorganizing user/system/profile Start Menu shortcut folders. Verified: the current app has the right shape for a local trust-first cleaner: background scans, editable operation plans, rollback journals, protected system folders, structured JSONL logs, accessibility/localization metadata, profile/default-user targeting, and a zip release package. Highest-value direction: harden the filesystem and shortcut-inspection trust boundary before adding broader automation. Top opportunities: reparse-point protection, full `.lnk`/`.url` metadata risk classification, Known Folder API path resolution, atomic state writes, release integrity/signing, human-readable audit exports, package-manager shortcut resurrection handling, configurable rule presets, runtime UI/a11y smoke tests, and elevated relaunch.
+Start Menu Organizer is a Windows PowerShell 5.1/WPF utility for auditing, reviewing, backing up, and safely reorganizing user, system, and profile Start Menu shortcut folders. Verified: the current app has the right shape for a local trust-first cleaner with background scans, editable operation plans, rollback journals, protected system folders, structured JSONL logs, accessibility and localization metadata, profile targeting, and a zip release package. The highest-value direction is to harden the filesystem and shortcut-inspection trust boundary before adding broader automation. Top opportunities include reparse-point protection, full `.lnk` and `.url` metadata risk classification, Known Folder API path resolution, atomic state writes, release signing, human-readable audit exports, package-manager shortcut resurrection handling, configurable rule presets, runtime accessibility checks, and administrator relaunch.
 
 ## Product Map
 - Core workflows: scan Start Menu scopes, classify shortcuts/folders, preview/edit an operation plan, execute guarded moves/deletes/restores, inspect logs/history.
@@ -12,7 +12,7 @@ Start Menu Organizer is a Windows PowerShell 5.1/WPF utility for auditing, previ
 ## Competitive Landscape
 - Start Menu Helper: does continuous cleaning, backup prompts, setup install, and folder flattening well. Learn from its install/setup and configurable cleanup modes; avoid unattended mutation until Start Menu Organizer has stronger provenance, reparse, and shortcut-risk safeguards.
 - Start Menu Cleaner: small focused cleaner with executable release, CLI options, logging, and shortcut edit/create support. Learn from the CLI/reporting path; avoid packaging patterns that increase AV friction.
-- Start-Menu-Manager: uses WPF, MSI packaging, JSON shortcut definitions, console builder, custom icons, and uninstall cleanup. Learn from portable shortcut schemas and MSI-style install polish; avoid turning this cleaner into a shortcut-authoring suite before metadata preservation is robust.
+- Start-Menu-Manager: uses WPF, MSI packaging, JSON shortcut definitions, console builder, custom icons, and uninstall cleanup. Learn from portable shortcut schemas and MSI-style install polish. Avoid turning this cleaner into a shortcut-authoring suite before metadata preservation is reliable.
 - Open-Shell, ExplorerPatcher, StartAllBack, and Windhawk: prove demand for deep Start/taskbar customization and compatibility tracking after Windows updates. Learn from explicit compatibility/release notes and modular customization; intentionally avoid shell replacement, Explorer injection, and system hooking.
 - Start11: makes backup/restore, role/kiosk layouts, tabs/groups, and deployment scripting paid enterprise features. Learn from exportable configurations and fleet handoff; avoid paywall-style feature sprawl unrelated to local cleanup.
 - Start Menu X: virtual groups avoid real-folder drift after installs/upgrades/uninstalls. Learn from non-mutating previews; avoid replacing filesystem cleanup with a parallel launcher database.
@@ -33,7 +33,7 @@ Start Menu Organizer is a Windows PowerShell 5.1/WPF utility for auditing, previ
 - Refactor candidate: replace hard-coded Start Menu/profile suffix construction in config and `Get-ProfileProgramsPath` with Known Folder API resolution plus safe fallbacks (`StartMenuOrganizerPro.ps1:32`, `StartMenuOrganizerPro.ps1:34`, `StartMenuOrganizerPro.ps1:1810`).
 - Refactor candidate: move rule/category/junk/protected-folder matching into an ordered rule engine with conflict diagnostics; current data tables are useful but not externally inspectable or preset-friendly (`StartMenuOrganizerPro.ps1:58`, `StartMenuOrganizerPro.ps1:72`, `StartMenuOrganizerPro.ps1:84`).
 - Test gap: `tests\Run-Tests.ps1` runs parser, Pester, and ScriptAnalyzer checks but has no coverage threshold, runtime WPF smoke, screenshot/visual-tree validation, or synthetic `.lnk` metadata fixtures.
-- Documentation gap: README covers setup and workflows, but not release verification, shortcut risk semantics, rule precedence, localization template validation, or admin/elevation behavior.
+- Documentation gap: README covers setup and workflows, but not release verification, shortcut risk semantics, rule precedence, localization template validation, or administrator access behavior.
 
 ## Rejected Ideas
 - Full shell replacement or Explorer/taskbar hooking: Open-Shell, ExplorerPatcher, StartAllBack, and Windhawk cover this space; it contradicts the local cleaner model and raises stability/security risk.

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Start Menu Organizer Pro - Comprehensive Windows Start Menu management tool
+    Start Menu Organizer for Windows shortcut cleanup and organization.
 .DESCRIPTION
     Professional tool to organize Windows Start Menu with features including:
     - Junk detection and removal
@@ -21,6 +21,13 @@
 #>
 
 #Requires -Version 5.1
+
+[CmdletBinding()]
+param(
+    [switch]$Demo,
+    [ValidateSet('Actions', 'Settings', 'Log')]
+    [string]$DemoView = 'Actions'
+)
 
 # ============================================================================
 # CONFIGURATION
@@ -79,7 +86,7 @@ function Get-SystemStartMenuPrograms {
 }
 
 $script:Config = @{
-    Version         = "0.14.0"
+    Version         = "0.15.0"
     SettingsSchema  = 1
     UserStartMenu   = Get-UserStartMenuPrograms
     SystemStartMenu = Get-SystemStartMenuPrograms
@@ -166,6 +173,28 @@ Add-Type -AssemblyName PresentationCore
 Add-Type -AssemblyName WindowsBase
 Add-Type -AssemblyName System.Windows.Forms
 
+if (-not ('StartMenuOrganizer.NativeWindow' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+namespace StartMenuOrganizer {
+    public static class NativeWindow {
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+
+        public static void UseDarkTitleBar(IntPtr hwnd) {
+            if (hwnd == IntPtr.Zero) return;
+            int enabled = 1;
+            if (DwmSetWindowAttribute(hwnd, 20, ref enabled, sizeof(int)) != 0) {
+                DwmSetWindowAttribute(hwnd, 19, ref enabled, sizeof(int));
+            }
+        }
+    }
+}
+'@
+}
+
 $script:WScriptShell = $null
 
 # ============================================================================
@@ -180,30 +209,31 @@ $script:WScriptShell = $null
     Width="1400" Height="900"
     MinWidth="1200" MinHeight="700"
     WindowStartupLocation="CenterScreen"
-    Background="#0d1117">
+    Background="#070B14"
+    FontFamily="Segoe UI Variable Text,Segoe UI">
     
     <Window.Resources>
         <!-- Dark Theme Colors -->
-        <SolidColorBrush x:Key="PrimaryBg" Color="#0d1117"/>
-        <SolidColorBrush x:Key="SecondaryBg" Color="#161b22"/>
-        <SolidColorBrush x:Key="TertiaryBg" Color="#21262d"/>
-        <SolidColorBrush x:Key="CardBg" Color="#1c2128"/>
-        <SolidColorBrush x:Key="AccentColor" Color="#238636"/>
-        <SolidColorBrush x:Key="AccentHover" Color="#2ea043"/>
-        <SolidColorBrush x:Key="DangerColor" Color="#da3633"/>
-        <SolidColorBrush x:Key="DangerHover" Color="#f85149"/>
-        <SolidColorBrush x:Key="WarningColor" Color="#d29922"/>
-        <SolidColorBrush x:Key="InfoColor" Color="#58a6ff"/>
-        <SolidColorBrush x:Key="TextPrimary" Color="#e6edf3"/>
-        <SolidColorBrush x:Key="TextSecondary" Color="#8b949e"/>
-        <SolidColorBrush x:Key="TextMuted" Color="#9da7b3"/>
-        <SolidColorBrush x:Key="BorderColor" Color="#30363d"/>
-        <SolidColorBrush x:Key="BorderHover" Color="#8b949e"/>
+        <SolidColorBrush x:Key="PrimaryBg" Color="#070B14"/>
+        <SolidColorBrush x:Key="SecondaryBg" Color="#0D1424"/>
+        <SolidColorBrush x:Key="TertiaryBg" Color="#121C2F"/>
+        <SolidColorBrush x:Key="CardBg" Color="#101A2B"/>
+        <SolidColorBrush x:Key="AccentColor" Color="#22D3EE"/>
+        <SolidColorBrush x:Key="AccentHover" Color="#67E8F9"/>
+        <SolidColorBrush x:Key="DangerColor" Color="#301A22"/>
+        <SolidColorBrush x:Key="DangerHover" Color="#48212C"/>
+        <SolidColorBrush x:Key="WarningColor" Color="#F5B942"/>
+        <SolidColorBrush x:Key="InfoColor" Color="#38BDF8"/>
+        <SolidColorBrush x:Key="TextPrimary" Color="#F1F5F9"/>
+        <SolidColorBrush x:Key="TextSecondary" Color="#A9B7CC"/>
+        <SolidColorBrush x:Key="TextMuted" Color="#7F8DA3"/>
+        <SolidColorBrush x:Key="BorderColor" Color="#24324A"/>
+        <SolidColorBrush x:Key="BorderHover" Color="#49617E"/>
         
         <!-- Button Style -->
         <Style x:Key="ModernButton" TargetType="Button">
             <Setter Property="Background" Value="{StaticResource AccentColor}"/>
-            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Foreground" Value="#041319"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Padding" Value="16,8"/>
             <Setter Property="FontSize" Value="12"/>
@@ -233,6 +263,7 @@ $script:WScriptShell = $null
         <!-- Secondary Button -->
         <Style x:Key="SecondaryButton" TargetType="Button" BasedOn="{StaticResource ModernButton}">
             <Setter Property="Background" Value="{StaticResource TertiaryBg}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -259,11 +290,13 @@ $script:WScriptShell = $null
         <!-- Danger Button -->
         <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource ModernButton}">
             <Setter Property="Background" Value="{StaticResource DangerColor}"/>
+            <Setter Property="Foreground" Value="#FFB4B8"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="border" Background="{TemplateBinding Background}" 
-                                CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                CornerRadius="6" Padding="{TemplateBinding Padding}"
+                                BorderBrush="#6B303C" BorderThickness="1">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
@@ -315,6 +348,40 @@ $script:WScriptShell = $null
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="Margin" Value="0,3"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="18"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Border x:Name="box" Width="15" Height="15" CornerRadius="4"
+                                    Background="{StaticResource PrimaryBg}" BorderBrush="{StaticResource BorderHover}"
+                                    BorderThickness="1" VerticalAlignment="Center">
+                                <Path x:Name="check" Data="M 3 7 L 6 10 L 12 4" Stroke="#041319"
+                                      StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                      Visibility="Collapsed"/>
+                            </Border>
+                            <ContentPresenter Grid.Column="1" Margin="6,0,0,0" VerticalAlignment="Center"
+                                              RecognizesAccessKey="True"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="box" Property="BorderBrush" Value="{StaticResource AccentColor}"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="box" Property="Background" Value="{StaticResource AccentColor}"/>
+                                <Setter TargetName="box" Property="BorderBrush" Value="{StaticResource AccentColor}"/>
+                                <Setter TargetName="check" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.8"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         
         <!-- ComboBox Full Dark Theme -->
@@ -580,19 +647,72 @@ $script:WScriptShell = $null
         </Style>
         
         <!-- ScrollBar Style -->
+        <ControlTemplate x:Key="VerticalScrollBarTemplate" TargetType="ScrollBar">
+            <Grid Background="{StaticResource PrimaryBg}">
+                <Track x:Name="PART_Track" IsDirectionReversed="True" Focusable="False">
+                    <Track.DecreaseRepeatButton>
+                        <RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" Focusable="False"/>
+                    </Track.DecreaseRepeatButton>
+                    <Track.Thumb>
+                        <Thumb Background="#3B4B64" MinHeight="36">
+                            <Thumb.Template>
+                                <ControlTemplate TargetType="Thumb">
+                                    <Border x:Name="thumb" Background="{TemplateBinding Background}" CornerRadius="5" Margin="2"/>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="thumb" Property="Background" Value="#60718B"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Thumb.Template>
+                        </Thumb>
+                    </Track.Thumb>
+                    <Track.IncreaseRepeatButton>
+                        <RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Focusable="False"/>
+                    </Track.IncreaseRepeatButton>
+                </Track>
+            </Grid>
+        </ControlTemplate>
+
+        <ControlTemplate x:Key="HorizontalScrollBarTemplate" TargetType="ScrollBar">
+            <Grid Background="{StaticResource PrimaryBg}">
+                <Track x:Name="PART_Track" Focusable="False">
+                    <Track.DecreaseRepeatButton>
+                        <RepeatButton Command="ScrollBar.PageLeftCommand" Opacity="0" Focusable="False"/>
+                    </Track.DecreaseRepeatButton>
+                    <Track.Thumb>
+                        <Thumb Background="#3B4B64" MinWidth="36">
+                            <Thumb.Template>
+                                <ControlTemplate TargetType="Thumb">
+                                    <Border x:Name="thumb" Background="{TemplateBinding Background}" CornerRadius="5" Margin="2"/>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="thumb" Property="Background" Value="#60718B"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Thumb.Template>
+                        </Thumb>
+                    </Track.Thumb>
+                    <Track.IncreaseRepeatButton>
+                        <RepeatButton Command="ScrollBar.PageRightCommand" Opacity="0" Focusable="False"/>
+                    </Track.IncreaseRepeatButton>
+                </Track>
+            </Grid>
+        </ControlTemplate>
+
         <Style TargetType="ScrollBar">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Width" Value="10"/>
+            <Setter Property="Background" Value="{StaticResource PrimaryBg}"/>
+            <Setter Property="Width" Value="11"/>
+            <Setter Property="Height" Value="11"/>
+            <Setter Property="Template" Value="{StaticResource VerticalScrollBarTemplate}"/>
+            <Style.Triggers>
+                <Trigger Property="Orientation" Value="Horizontal">
+                    <Setter Property="Template" Value="{StaticResource HorizontalScrollBarTemplate}"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
     </Window.Resources>
-    
-    <Window.InputBindings>
-        <KeyBinding Key="Delete" Command="{x:Static ApplicationCommands.Delete}"/>
-        <KeyBinding Key="A" Modifiers="Ctrl" Command="{x:Static ApplicationCommands.SelectAll}"/>
-        <KeyBinding Key="Z" Modifiers="Ctrl" Command="{x:Static ApplicationCommands.Undo}"/>
-        <KeyBinding Key="F" Modifiers="Ctrl" Command="{x:Static ApplicationCommands.Find}"/>
-        <KeyBinding Key="F5" Command="{x:Static NavigationCommands.Refresh}"/>
-    </Window.InputBindings>
     
     <Grid>
         <Grid.RowDefinitions>
@@ -611,14 +731,21 @@ $script:WScriptShell = $null
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 
-                <StackPanel Grid.Column="0">
-                    <TextBlock x:Name="txtAppTitle" Text="Start Menu Organizer Pro" FontSize="22" FontWeight="Bold"
-                               Foreground="{StaticResource TextPrimary}"/>
-                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                        <TextBlock x:Name="txtAdminStatus" FontSize="11" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center"/>
-                        <Button x:Name="btnElevate" Content="Run as Admin" Style="{StaticResource SmallButton}" Margin="8,0,0,0" Visibility="Collapsed"/>
+                <Grid Grid.Column="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="48"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Image x:Name="imgBrand" Width="40" Height="40" VerticalAlignment="Center"/>
+                    <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
+                        <TextBlock x:Name="txtAppTitle" Text="Start Menu Organizer" FontSize="21" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimary}"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                            <TextBlock x:Name="txtAdminStatus" FontSize="11" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center"/>
+                            <Button x:Name="btnElevate" Content="Run as admin" Style="{StaticResource SmallButton}" Margin="8,0,0,0" Visibility="Collapsed"/>
+                        </StackPanel>
                     </StackPanel>
-                </StackPanel>
+                </Grid>
                 
                 <!-- Search Bar -->
                 <Grid Grid.Column="1" Margin="40,0">
@@ -628,11 +755,11 @@ $script:WScriptShell = $null
                     <TextBox x:Name="txtSearch" VerticalAlignment="Center">
                         <TextBox.Style>
                             <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
-                                <Setter Property="Tag" Value="Search items... (Ctrl+F)"/>
+                                <Setter Property="Tag" Value="Search names, paths, or targets"/>
                             </Style>
                         </TextBox.Style>
                     </TextBox>
-                    <TextBlock x:Name="txtSearchPlaceholder" Text="Search items... (Ctrl+F)" 
+                    <TextBlock x:Name="txtSearchPlaceholder" Text="Search names, paths, or targets"
                                Foreground="{StaticResource TextMuted}" Padding="12,10"
                                IsHitTestVisible="False" VerticalAlignment="Center"/>
                 </Grid>
@@ -642,7 +769,7 @@ $script:WScriptShell = $null
                     <Button x:Name="btnCancelWork" Content="Cancel" Style="{StaticResource DangerButton}"
                             Margin="0,0,8,0" IsEnabled="False"/>
                     <Button x:Name="btnUndo" Content="Undo" Style="{StaticResource SecondaryButton}"
-                            Margin="0,0,8,0" IsEnabled="False" ToolTip="Ctrl+Z"/>
+                            Margin="0,0,8,0" IsEnabled="False" ToolTip="Undo the last reversible change"/>
                     <Button x:Name="btnBackup" Content="Backup" Style="{StaticResource SecondaryButton}" Margin="0,0,8,0"/>
                     <Button x:Name="btnRestore" Content="Restore" Style="{StaticResource SecondaryButton}" Margin="0,0,8,0"/>
                     <Button x:Name="btnExportReport" Content="Export Report" Style="{StaticResource SecondaryButton}"/>
@@ -688,8 +815,8 @@ $script:WScriptShell = $null
                                     <ComboBoxItem x:Name="cmbScopeProfile" Content="Selected Profile"/>
                                     <ComboBoxItem x:Name="cmbScopeDefaultUser" Content="Default User"/>
                                 </ComboBox>
-                                <Button x:Name="btnRefresh" Content="Refresh" Style="{StaticResource SmallButton}" 
-                                        Margin="10,0,0,0" ToolTip="F5"/>
+                                <Button x:Name="btnRefresh" Content="Scan again" Style="{StaticResource SmallButton}"
+                                        Margin="10,0,0,0" ToolTip="Scan the selected Start Menu scope again"/>
                             </StackPanel>
                             
                             <StackPanel Grid.Column="2" Orientation="Horizontal">
@@ -702,8 +829,9 @@ $script:WScriptShell = $null
                                     <ComboBoxItem x:Name="cmbSortLocation" Content="Location"/>
                                     <ComboBoxItem x:Name="cmbSortTarget" Content="Target"/>
                                 </ComboBox>
-                                <CheckBox x:Name="chkPreviewMode" Content="Preview Mode" Margin="15,0,0,0" 
-                                          VerticalAlignment="Center" ToolTip="Show what actions would do without executing"/>
+                                <CheckBox x:Name="chkPreviewMode" Content="Review first" Margin="15,0,0,0"
+                                          VerticalAlignment="Center" IsChecked="True" IsEnabled="False"
+                                          ToolTip="Every change is prepared as a reviewable plan before it runs"/>
                             </StackPanel>
                         </Grid>
                     </Border>
@@ -727,7 +855,7 @@ $script:WScriptShell = $null
                     <DataGrid x:Name="dgItems" Grid.Row="2" Margin="0">
                         <DataGrid.ContextMenu>
                             <ContextMenu>
-                                <MenuItem x:Name="ctxDelete" Header="Delete" InputGestureText="Del"/>
+                                <MenuItem x:Name="ctxDelete" Header="Prepare delete plan"/>
                                 <MenuItem x:Name="ctxRename" Header="Rename"/>
                                 <Separator Background="{StaticResource BorderColor}"/>
                                 <MenuItem x:Name="ctxOpenLocation" Header="Open File Location"/>
@@ -747,13 +875,26 @@ $script:WScriptShell = $null
                                     <MenuItem x:Name="ctxCatNetwork" Header="Networking"/>
                                 </MenuItem>
                                 <Separator Background="{StaticResource BorderColor}"/>
-                                <MenuItem x:Name="ctxSelectAll" Header="Select All" InputGestureText="Ctrl+A"/>
+                                <MenuItem x:Name="ctxSelectAll" Header="Select All"/>
                                 <MenuItem x:Name="ctxSelectNone" Header="Select None"/>
                             </ContextMenu>
                         </DataGrid.ContextMenu>
                         <DataGrid.Columns>
-                            <DataGridCheckBoxColumn Binding="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
-                                                    Width="40" CanUserResize="False"/>
+                            <DataGridCheckBoxColumn Binding="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                    Width="40" CanUserResize="False">
+                                <DataGridCheckBoxColumn.ElementStyle>
+                                    <Style TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}">
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridCheckBoxColumn.ElementStyle>
+                                <DataGridCheckBoxColumn.EditingElementStyle>
+                                    <Style TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}">
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridCheckBoxColumn.EditingElementStyle>
+                            </DataGridCheckBoxColumn>
                             <DataGridTextColumn x:Name="colName" Header="Name" Binding="{Binding DisplayName}" Width="200"/>
                             <DataGridTextColumn x:Name="colType" Header="Type" Binding="{Binding ItemType}" Width="80"/>
                             <DataGridTextColumn x:Name="colStatus" Header="Status" Binding="{Binding Status}" Width="90"/>
@@ -778,8 +919,8 @@ $script:WScriptShell = $null
                             </Grid.ColumnDefinitions>
                             
                             <StackPanel Orientation="Horizontal">
-                                <Button x:Name="btnSelectAll" Content="All" Style="{StaticResource SmallButton}" Margin="0,0,5,0"/>
-                                <Button x:Name="btnSelectNone" Content="None" Style="{StaticResource SmallButton}" Margin="0,0,5,0"/>
+                                <Button x:Name="btnSelectAll" Content="Select all" Style="{StaticResource SmallButton}" Margin="0,0,5,0"/>
+                                <Button x:Name="btnSelectNone" Content="Clear" Style="{StaticResource SmallButton}" Margin="0,0,5,0"/>
                                 <Button x:Name="btnSelectJunk" Content="Junk" Style="{StaticResource SmallButton}" Margin="0,0,5,0"/>
                                 <Button x:Name="btnSelectBroken" Content="Broken" Style="{StaticResource SmallButton}" Margin="0,0,5,0"/>
                                 <Button x:Name="btnSelectDuplicates" Content="Duplicates" Style="{StaticResource SmallButton}" Margin="0,0,5,0"/>
@@ -806,13 +947,13 @@ $script:WScriptShell = $null
                                 <TextBlock x:Name="txtCleanupHeader" Text="CLEANUP" FontSize="11" FontWeight="Bold"
                                            Foreground="{StaticResource TextMuted}" Margin="0,0,0,10"/>
                                 
-                                <Button x:Name="btnDeleteSelected" Content="Delete Selected" 
+                                <Button x:Name="btnDeleteSelected" Content="Review selected removals"
                                         Style="{StaticResource DangerButton}" Margin="0,0,0,8"/>
-                                <Button x:Name="btnRemoveAllJunk" Content="Remove All Junk" 
-                                        Style="{StaticResource DangerButton}" Margin="0,0,0,8"/>
-                                <Button x:Name="btnRemoveBroken" Content="Remove Broken Shortcuts" 
-                                        Style="{StaticResource DangerButton}" Margin="0,0,0,8"/>
-                                <Button x:Name="btnRemoveDuplicates" Content="Remove Duplicates" 
+                                <Button x:Name="btnRemoveAllJunk" Content="Review junk cleanup"
+                                        Style="{StaticResource SecondaryButton}" Margin="0,0,0,8"/>
+                                <Button x:Name="btnRemoveBroken" Content="Review broken shortcuts"
+                                        Style="{StaticResource SecondaryButton}" Margin="0,0,0,8"/>
+                                <Button x:Name="btnRemoveDuplicates" Content="Review duplicates"
                                         Style="{StaticResource SecondaryButton}" Margin="0,0,0,8"/>
                                 <Button x:Name="btnFlattenFolders" Content="Flatten Single-Item Folders" 
                                         Style="{StaticResource SecondaryButton}" Margin="0,0,0,8"/>
@@ -886,7 +1027,7 @@ $script:WScriptShell = $null
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
-                                    <Button x:Name="btnExecutePlan" Grid.Column="0" Content="Execute Plan"
+                                    <Button x:Name="btnExecutePlan" Grid.Column="0" Content="Run reviewed plan"
                                             Style="{StaticResource ModernButton}" Margin="0,0,4,0" IsEnabled="False"/>
                                     <Button x:Name="btnClearPlan" Grid.Column="1" Content="Clear Plan"
                                             Style="{StaticResource SecondaryButton}" Margin="4,0,0,0" IsEnabled="False"/>
@@ -955,14 +1096,22 @@ $script:WScriptShell = $null
                                 <TextBlock x:Name="txtConfigurationHeader" Text="CONFIGURATION" FontSize="11" FontWeight="Bold"
                                            Foreground="{StaticResource TextMuted}" Margin="0,15,0,10"/>
                                 
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <Button x:Name="btnExportConfig" Content="Export Config" 
-                                            Style="{StaticResource SecondaryButton}" Margin="0,0,8,0"/>
-                                    <Button x:Name="btnImportConfig" Content="Import Config" 
-                                            Style="{StaticResource SecondaryButton}" Margin="0,0,8,0"/>
-                                    <Button x:Name="btnResetConfig" Content="Reset to Defaults" 
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <Button x:Name="btnExportConfig" Content="Export Config"
+                                            Style="{StaticResource SecondaryButton}" Margin="0,0,4,8"/>
+                                    <Button x:Name="btnImportConfig" Grid.Column="1" Content="Import Config"
+                                            Style="{StaticResource SecondaryButton}" Margin="4,0,0,8"/>
+                                    <Button x:Name="btnResetConfig" Grid.Row="1" Grid.ColumnSpan="2" Content="Reset to Defaults"
                                             Style="{StaticResource SecondaryButton}"/>
-                                </StackPanel>
+                                </Grid>
 
                                 <!-- Profile Target -->
                                 <TextBlock x:Name="txtProfileTargetHeader" Text="PROFILE TARGET" FontSize="11" FontWeight="Bold"
@@ -1045,6 +1194,20 @@ $XAML.SelectNodes("//*[@*[contains(translate(name(.),'n','N'),'Name')]]") | ForE
     Set-Variable -Name $name -Value $Window.FindName($name) -Scope Script
 }
 
+$brandRoot = Join-Path $PSScriptRoot 'assets\brand'
+$iconPath = Join-Path $brandRoot 'start-menu-organizer.ico'
+$brandImagePath = Join-Path $brandRoot 'start-menu-organizer-512.png'
+if (Test-Path -LiteralPath $iconPath) {
+    $Window.Icon = [System.Windows.Media.Imaging.BitmapFrame]::Create([System.Uri]::new($iconPath))
+}
+if (Test-Path -LiteralPath $brandImagePath) {
+    $imgBrand.Source = [System.Windows.Media.Imaging.BitmapFrame]::Create([System.Uri]::new($brandImagePath))
+}
+$Window.Add_SourceInitialized({
+    $handle = [System.Windows.Interop.WindowInteropHelper]::new($Window).Handle
+    [StartMenuOrganizer.NativeWindow]::UseDarkTitleBar($handle)
+})
+
 # ============================================================================
 # DATA MODEL
 # ============================================================================
@@ -1061,8 +1224,8 @@ $script:UnhandledExceptionHandlersRegistered = $false
 $script:UiStrings = [ordered]@{}
 $script:DefaultUiStrings = [ordered]@{
     'Window.Title' = 'Start Menu Organizer v{0}'
-    'txtAppTitle.Text' = 'Start Menu Organizer Pro'
-    'txtSearchPlaceholder.Text' = 'Search items... (Ctrl+F)'
+    'txtAppTitle.Text' = 'Start Menu Organizer'
+    'txtSearchPlaceholder.Text' = 'Search names, paths, or targets'
     'btnCancelWork.Content' = 'Cancel'
     'btnUndo.Content' = 'Undo'
     'btnUndo.ToolTip' = 'Undo the last reversible operation'
@@ -1075,7 +1238,7 @@ $script:DefaultUiStrings = [ordered]@{
     'cmbScopeBoth.Content' = 'Both'
     'cmbScopeProfile.Content' = 'Selected Profile'
     'cmbScopeDefaultUser.Content' = 'Default User'
-    'btnRefresh.Content' = 'Refresh'
+    'btnRefresh.Content' = 'Scan again'
     'btnRefresh.ToolTip' = 'Refresh the Start Menu scan'
     'lblSort.Text' = 'Sort:'
     'cmbSortName.Content' = 'Name'
@@ -1083,15 +1246,15 @@ $script:DefaultUiStrings = [ordered]@{
     'cmbSortStatus.Content' = 'Status'
     'cmbSortLocation.Content' = 'Location'
     'cmbSortTarget.Content' = 'Target'
-    'chkPreviewMode.Content' = 'Preview Mode'
-    'chkPreviewMode.ToolTip' = 'Show what actions would do without executing'
+    'chkPreviewMode.Content' = 'Review first'
+    'chkPreviewMode.ToolTip' = 'Every change is prepared as a reviewable plan before it runs'
     'lblFilter.Text' = 'Filter:'
     'chkShowShortcuts.Content' = 'Shortcuts'
     'chkShowFolders.Content' = 'Folders'
     'chkShowJunk.Content' = 'Junk'
     'chkShowBroken.Content' = 'Broken'
     'chkShowDuplicates.Content' = 'Duplicates'
-    'ctxDelete.Header' = 'Delete'
+    'ctxDelete.Header' = 'Prepare delete plan'
     'ctxRename.Header' = 'Rename'
     'ctxOpenLocation.Header' = 'Open File Location'
     'ctxOpenTarget.Header' = 'Open Target Location'
@@ -1115,8 +1278,8 @@ $script:DefaultUiStrings = [ordered]@{
     'colLocation.Header' = 'Location'
     'colTarget.Header' = 'Target'
     'colRisk.Header' = 'Risk'
-    'btnSelectAll.Content' = 'All'
-    'btnSelectNone.Content' = 'None'
+    'btnSelectAll.Content' = 'Select all'
+    'btnSelectNone.Content' = 'Clear'
     'btnSelectJunk.Content' = 'Junk'
     'btnSelectBroken.Content' = 'Broken'
     'btnSelectDuplicates.Content' = 'Duplicates'
@@ -1124,10 +1287,10 @@ $script:DefaultUiStrings = [ordered]@{
     'btnInvertSelection.Content' = 'Invert'
     'tabActions.Header' = 'Actions'
     'txtCleanupHeader.Text' = 'CLEANUP'
-    'btnDeleteSelected.Content' = 'Delete Selected'
-    'btnRemoveAllJunk.Content' = 'Remove All Junk'
-    'btnRemoveBroken.Content' = 'Remove Broken Shortcuts'
-    'btnRemoveDuplicates.Content' = 'Remove Duplicates'
+    'btnDeleteSelected.Content' = 'Review selected removals'
+    'btnRemoveAllJunk.Content' = 'Review junk cleanup'
+    'btnRemoveBroken.Content' = 'Review broken shortcuts'
+    'btnRemoveDuplicates.Content' = 'Review duplicates'
     'btnFlattenFolders.Content' = 'Flatten Single-Item Folders'
     'btnRemoveEmpty.Content' = 'Remove Empty Folders'
     'btnMoveAllToRoot.Content' = 'Move All to Root'
@@ -1145,7 +1308,7 @@ $script:DefaultUiStrings = [ordered]@{
     'txtPlanStatus.Text' = 'No plan loaded'
     'btnExportPlan.Content' = 'Export Plan'
     'btnImportPlan.Content' = 'Import Plan'
-    'btnExecutePlan.Content' = 'Execute Plan'
+    'btnExecutePlan.Content' = 'Run reviewed plan'
     'btnClearPlan.Content' = 'Clear Plan'
     'txtQuickOpenHeader.Text' = 'QUICK OPEN'
     'btnOpenUserMenu.Content' = 'User Menu'
@@ -1168,8 +1331,8 @@ $script:DefaultUiStrings = [ordered]@{
     'btnUseDefaultProfileRoot.Content' = 'Use Default User Profile'
     'tabLog.Header' = 'Log'
     'btnClearLog.Content' = 'Clear Log'
-    'Status.AdminFullAccess' = 'Running as Administrator - Full access to User and System Start Menu'
-    'Status.StandardUser' = 'Standard User - Limited to User Start Menu (Run as Admin for full access)'
+    'Status.AdminFullAccess' = 'Administrator access'
+    'Status.StandardUser' = 'User Start Menu access'
     'txtSearch.AutomationName' = 'Search Start Menu items'
     'txtSearch.HelpText' = 'Filters the item list by name, path, or target.'
     'btnCancelWork.AutomationName' = 'Cancel active work'
@@ -1190,8 +1353,8 @@ $script:DefaultUiStrings = [ordered]@{
     'btnRefresh.HelpText' = 'Scans the selected Start Menu scope again.'
     'cmbSort.AutomationName' = 'Sort items'
     'cmbSort.HelpText' = 'Selects the column used to sort the item list.'
-    'chkPreviewMode.AutomationName' = 'Preview mode'
-    'chkPreviewMode.HelpText' = 'Builds a reviewed operation plan instead of changing files immediately.'
+    'chkPreviewMode.AutomationName' = 'Review first workflow'
+    'chkPreviewMode.HelpText' = 'Every change is prepared as a reviewable operation plan before execution.'
     'dgItems.AutomationName' = 'Start Menu items'
     'dgItems.HelpText' = 'Displays detected shortcuts and folders with status, location, and target path.'
     'btnDeleteSelected.AutomationName' = 'Delete selected items'
@@ -1303,11 +1466,11 @@ $script:UiTabOrder = @(
     'btnClearLog'
 )
 $script:ThemeContrastPairs = @(
-    @{ Name = 'Primary text on primary background'; Foreground = '#e6edf3'; Background = '#0d1117'; Minimum = 4.5 },
-    @{ Name = 'Secondary text on secondary background'; Foreground = '#8b949e'; Background = '#161b22'; Minimum = 4.5 },
-    @{ Name = 'Muted text on secondary background'; Foreground = '#9da7b3'; Background = '#161b22'; Minimum = 4.5 },
-    @{ Name = 'White text on accent button'; Foreground = '#ffffff'; Background = '#238636'; Minimum = 4.5 },
-    @{ Name = 'White text on danger button'; Foreground = '#ffffff'; Background = '#da3633'; Minimum = 4.5 }
+    @{ Name = 'Primary text on primary background'; Foreground = '#F1F5F9'; Background = '#070B14'; Minimum = 4.5 },
+    @{ Name = 'Secondary text on secondary background'; Foreground = '#A9B7CC'; Background = '#0D1424'; Minimum = 4.5 },
+    @{ Name = 'Muted text on secondary background'; Foreground = '#7F8DA3'; Background = '#0D1424'; Minimum = 4.5 },
+    @{ Name = 'Dark text on accent button'; Foreground = '#041319'; Background = '#22D3EE'; Minimum = 4.5 },
+    @{ Name = 'Danger text on danger button'; Foreground = '#FFB4B8'; Background = '#301A22'; Minimum = 4.5 }
 )
 
 # ============================================================================
@@ -2958,6 +3121,9 @@ function Set-CurrentOperationPlan {
 
     Update-PlanStatus
     Show-OperationPlanSummary -Plan $script:CurrentOperationPlan
+    if (Get-Command -Name Update-Status -ErrorAction SilentlyContinue) {
+        Update-Status "$Name is ready for review. Nothing has run."
+    }
 }
 
 function Update-PlanStatus {
@@ -2965,9 +3131,14 @@ function Update-PlanStatus {
 
     if ($script:CurrentOperationPlan -and @($script:CurrentOperationPlan.Operations).Count -gt 0) {
         $count = @($script:CurrentOperationPlan.Operations).Count
-        $txtPlanStatus.Text = "$($script:CurrentOperationPlan.Name) - $count operation(s) loaded"
+        $txtPlanStatus.Text = if ($Demo) {
+            "$($script:CurrentOperationPlan.Name). $count operations prepared for demo review."
+        }
+        else {
+            "$($script:CurrentOperationPlan.Name). $count operations ready."
+        }
         $btnExportPlan.IsEnabled = $true
-        $btnExecutePlan.IsEnabled = $true
+        $btnExecutePlan.IsEnabled = -not $Demo
         $btnClearPlan.IsEnabled = $true
     }
     else {
@@ -3228,7 +3399,85 @@ function Invoke-CurrentOperationPlan {
     Start-OperationPlanWorker -Operations $operations -PlanName $script:CurrentOperationPlan.Name
 }
 
+function New-DemoStartMenuItem {
+    param(
+        [string]$DisplayName,
+        [string]$RelativePath,
+        [string]$TargetPath,
+        [string]$ItemType = 'Shortcut',
+        [string]$Status = 'OK',
+        [string]$RiskFlags = '',
+        [bool]$IsFolder = $false,
+        [bool]$IsJunk = $false,
+        [bool]$IsBroken = $false,
+        [bool]$IsDuplicate = $false,
+        [bool]$IsProtected = $false,
+        [bool]$IsSelected = $false
+    )
+
+    $basePath = 'C:\Demo\Start Menu\Programs'
+    return [PSCustomObject]@{
+        IsSelected    = $IsSelected
+        DisplayName   = $DisplayName
+        RelativePath  = "[User] $RelativePath"
+        FullPath      = Join-Path $basePath $RelativePath
+        BasePath      = $basePath
+        IsFolder      = $IsFolder
+        IsJunk        = $IsJunk
+        IsBroken      = $IsBroken
+        IsDuplicate   = $IsDuplicate
+        IsProtected   = $IsProtected
+        ItemType      = $ItemType
+        TargetPath    = $TargetPath
+        Arguments     = ''
+        WorkingDir    = ''
+        Description   = ''
+        RiskFlags     = $RiskFlags
+        Provenance    = 'Installer'
+        Status        = $Status
+        IsSystem      = $false
+        RequiresAdmin = $false
+        ScopeName     = 'Demo'
+    }
+}
+
+function Get-DemoStartMenuItems {
+    return @(
+        New-DemoStartMenuItem -DisplayName 'Visual Studio Code' -RelativePath 'Development\Visual Studio Code.lnk' -TargetPath 'C:\Program Files\Microsoft VS Code\Code.exe'
+        New-DemoStartMenuItem -DisplayName 'Windows Terminal' -RelativePath 'Development\Windows Terminal.lnk' -TargetPath 'C:\Program Files\WindowsApps\Microsoft.WindowsTerminal.exe'
+        New-DemoStartMenuItem -DisplayName 'Docker Desktop' -RelativePath 'Development\Docker Desktop.lnk' -TargetPath 'C:\Program Files\Docker\Docker\Docker Desktop.exe'
+        New-DemoStartMenuItem -DisplayName 'Figma' -RelativePath 'Graphics\Figma.lnk' -TargetPath 'C:\Users\Demo\AppData\Local\Figma\Figma.exe'
+        New-DemoStartMenuItem -DisplayName 'Spotify' -RelativePath 'Media\Spotify.lnk' -TargetPath 'C:\Users\Demo\AppData\Roaming\Spotify\Spotify.exe'
+        New-DemoStartMenuItem -DisplayName '7-Zip File Manager' -RelativePath 'Utilities\7-Zip File Manager.lnk' -TargetPath 'C:\Program Files\7-Zip\7zFM.exe'
+        New-DemoStartMenuItem -DisplayName 'PowerToys' -RelativePath 'Utilities\PowerToys.lnk' -TargetPath 'C:\Program Files\PowerToys\PowerToys.exe'
+        New-DemoStartMenuItem -DisplayName 'Zoom Workplace' -RelativePath 'Communication\Zoom Workplace.lnk' -TargetPath 'C:\Users\Demo\AppData\Roaming\Zoom\bin\Zoom.exe'
+        New-DemoStartMenuItem -DisplayName 'Release Notes' -RelativePath 'Utilities\Release Notes.lnk' -TargetPath 'C:\Program Files\Example\release-notes.html' -ItemType 'Junk' -Status 'Junk' -IsJunk $true -IsSelected $true
+        New-DemoStartMenuItem -DisplayName 'Product Website' -RelativePath 'Media\Product Website.url' -TargetPath 'https://example.com' -ItemType 'URL' -Status 'Junk' -IsJunk $true -IsSelected $true
+        New-DemoStartMenuItem -DisplayName 'Legacy Photo Editor' -RelativePath 'Graphics\Legacy Photo Editor.lnk' -TargetPath 'D:\Retired Apps\PhotoEditor.exe' -Status 'Broken' -IsBroken $true -IsSelected $true
+        New-DemoStartMenuItem -DisplayName 'Design Tool' -RelativePath 'Graphics\Design Tool.lnk' -TargetPath 'C:\Program Files\DesignTool\DesignTool.exe' -ItemType 'Duplicate' -Status 'Duplicate' -IsDuplicate $true
+        New-DemoStartMenuItem -DisplayName 'Design Tool Copy' -RelativePath 'Design Tool Copy.lnk' -TargetPath 'C:\Program Files\DesignTool\DesignTool.exe' -ItemType 'Duplicate' -Status 'Duplicate' -IsDuplicate $true
+        New-DemoStartMenuItem -DisplayName 'Maintenance Console' -RelativePath 'Utilities\Maintenance Console.lnk' -TargetPath 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' -Status 'Risk' -RiskFlags 'ScriptHost'
+        New-DemoStartMenuItem -DisplayName 'Windows Tools' -RelativePath 'Windows Tools' -TargetPath '' -ItemType 'Folder' -Status 'Protected' -IsFolder $true -IsProtected $true
+        New-DemoStartMenuItem -DisplayName 'Development' -RelativePath 'Development' -TargetPath '' -ItemType 'Folder' -IsFolder $true
+        New-DemoStartMenuItem -DisplayName 'Graphics' -RelativePath 'Graphics' -TargetPath '' -ItemType 'Folder' -IsFolder $true
+        New-DemoStartMenuItem -DisplayName 'Utilities' -RelativePath 'Utilities' -TargetPath '' -ItemType 'Folder' -IsFolder $true
+    )
+}
+
 function Refresh-Items {
+    if ($Demo) {
+        $script:AllItems.Clear()
+        foreach ($item in (Get-DemoStartMenuItems)) {
+            $script:AllItems.Add($item)
+        }
+        Apply-Filters
+        Update-Stats
+        Update-SelectionCount
+        Update-Status 'Demo workspace. No Start Menu files are being read or changed.'
+        Write-Log "Demo workspace loaded: $($script:AllItems.Count) sample items" 'Success'
+        return
+    }
+
     try {
         $scopes = @(Get-StartMenuScopes)
     }
@@ -3656,10 +3905,10 @@ function Apply-Filters {
 
 function Update-Stats {
     $total = $script:AllItems.Count
-    $junk = ($script:AllItems | Where-Object { $_.IsJunk }).Count
-    $broken = ($script:AllItems | Where-Object { $_.IsBroken }).Count
-    $duplicates = ($script:AllItems | Where-Object { $_.IsDuplicate }).Count
-    $folders = ($script:AllItems | Where-Object { $_.IsFolder }).Count
+    $junk = @($script:AllItems | Where-Object { $_.IsJunk }).Count
+    $broken = @($script:AllItems | Where-Object { $_.IsBroken }).Count
+    $duplicates = @($script:AllItems | Where-Object { $_.IsDuplicate }).Count
+    $folders = @($script:AllItems | Where-Object { $_.IsFolder }).Count
     
     $txtStats.Text = "Total: $total | Folders: $folders | Junk: $junk | Broken: $broken | Duplicates: $duplicates"
 }
@@ -3942,7 +4191,7 @@ function Delete-SelectedItems {
         return
     }
     
-    $isPreview = $chkPreviewMode.IsChecked
+    $isPreview = $true
     
     if ($isPreview) {
         $operations = @($selected | ForEach-Object {
@@ -3955,13 +4204,6 @@ function Delete-SelectedItems {
         }
         return
     }
-    
-    $result = [System.Windows.MessageBox]::Show(
-        "Delete $($selected.Count) selected item(s)?`n`nThis action can be undone.",
-        "Confirm Delete", "YesNo", "Warning"
-    )
-    
-    if ($result -ne 'Yes') { return }
     
     $operationId = New-OperationId
     $undoItems = @()
@@ -4011,7 +4253,7 @@ function Delete-SelectedItems {
 }
 
 function Remove-AllJunk {
-    $isPreview = $chkPreviewMode.IsChecked
+    $isPreview = $true
     $junkItems = @($script:AllItems | Where-Object { $_.IsJunk })
     
     if ($junkItems.Count -eq 0) {
@@ -4034,13 +4276,6 @@ function Remove-AllJunk {
         return
     }
     
-    $result = [System.Windows.MessageBox]::Show(
-        "Delete ALL $($junkItems.Count) junk items?`n`nThis action can be undone.",
-        "Confirm Junk Removal", "YesNo", "Warning"
-    )
-    
-    if ($result -ne 'Yes') { return }
-
     foreach ($item in $script:AllItems) { $item.IsSelected = $false }
     foreach ($item in $junkItems) { $item.IsSelected = $true }
     Apply-Filters
@@ -4049,7 +4284,7 @@ function Remove-AllJunk {
 }
 
 function Remove-BrokenShortcuts {
-    $isPreview = $chkPreviewMode.IsChecked
+    $isPreview = $true
     $brokenItems = @($script:AllItems | Where-Object { $_.IsBroken })
     
     if ($brokenItems.Count -eq 0) {
@@ -4069,13 +4304,6 @@ function Remove-BrokenShortcuts {
         return
     }
     
-    $result = [System.Windows.MessageBox]::Show(
-        "Delete $($brokenItems.Count) broken shortcuts?`n`nThese point to files/folders that no longer exist.",
-        "Confirm Removal", "YesNo", "Warning"
-    )
-    
-    if ($result -ne 'Yes') { return }
-
     foreach ($item in $script:AllItems) { $item.IsSelected = $false }
     foreach ($item in $brokenItems) { $item.IsSelected = $true }
     Apply-Filters
@@ -4084,7 +4312,7 @@ function Remove-BrokenShortcuts {
 }
 
 function Remove-Duplicates {
-    $isPreview = $chkPreviewMode.IsChecked
+    $isPreview = $true
     
     # Group by target path and keep only the first (usually in root)
     $duplicateGroups = $script:AllItems | 
@@ -4115,13 +4343,6 @@ function Remove-Duplicates {
         return
     }
     
-    $result = [System.Windows.MessageBox]::Show(
-        "Delete $($toDelete.Count) duplicate shortcuts?`n`nOne copy of each will be kept.",
-        "Confirm Removal", "YesNo", "Warning"
-    )
-    
-    if ($result -ne 'Yes') { return }
-    
     foreach ($item in $script:AllItems) { $item.IsSelected = $false }
     foreach ($item in $toDelete) { 
         $match = $script:AllItems | Where-Object { $_.FullPath -eq $item.FullPath } | Select-Object -First 1
@@ -4132,7 +4353,7 @@ function Remove-Duplicates {
 }
 
 function Flatten-SingleItemFolders {
-    $isPreview = $chkPreviewMode.IsChecked
+    $isPreview = $true
     $scopes = Get-StartMenuScopes
     $toFlatten = @()
     
@@ -4184,13 +4405,6 @@ function Flatten-SingleItemFolders {
         return
     }
     
-    $result = [System.Windows.MessageBox]::Show(
-        "Flatten $($toFlatten.Count) single-item folders?`n`nShortcuts will be moved to the parent level.",
-        "Confirm Flatten", "YesNo", "Question"
-    )
-    
-    if ($result -ne 'Yes') { return }
-    
     $operationId = New-OperationId
     $journalItems = @()
     $flattened = 0
@@ -4230,7 +4444,7 @@ function Flatten-SingleItemFolders {
 }
 
 function Remove-EmptyFolders {
-    $isPreview = $chkPreviewMode.IsChecked
+    $isPreview = $true
     $scopes = Get-StartMenuScopes
     $emptyFolders = @()
     
@@ -4295,7 +4509,7 @@ function Remove-EmptyFolders {
 }
 
 function Move-AllToRoot {
-    $isPreview = $chkPreviewMode.IsChecked
+    $isPreview = $true
     $scopes = Get-StartMenuScopes
     $toMove = @()
     
@@ -4359,13 +4573,6 @@ function Move-AllToRoot {
         }
         return
     }
-    
-    $result = [System.Windows.MessageBox]::Show(
-        "Move $($toMove.Count) shortcuts from folders to the Start Menu root?`n`nEmpty folders will be removed afterward.",
-        "Confirm Move All to Root", "YesNo", "Question"
-    )
-    
-    if ($result -ne 'Yes') { return }
     
     $operationId = New-OperationId
     $journalItems = @()
@@ -4442,7 +4649,7 @@ function Move-ToCategory {
         return
     }
     
-    $isPreview = $chkPreviewMode.IsChecked
+    $isPreview = $true
     
     if ($isPreview) {
         $operations = @($selected | ForEach-Object {
@@ -4500,7 +4707,7 @@ function Move-ToCategory {
 }
 
 function Auto-OrganizeAll {
-    $isPreview = $chkPreviewMode.IsChecked
+    $isPreview = $true
     $scopes = Get-StartMenuScopes
     $toOrganize = @()
     
@@ -4551,13 +4758,6 @@ function Auto-OrganizeAll {
         return
     }
     
-    $result = [System.Windows.MessageBox]::Show(
-        "Organize $($toOrganize.Count) items into category folders?",
-        "Confirm Auto-Organize", "YesNo", "Question"
-    )
-    
-    if ($result -ne 'Yes') { return }
-    
     $operationId = New-OperationId
     $journalItems = @()
     $organized = 0
@@ -4607,7 +4807,7 @@ function Strip-VersionNumbers {
         $selected = @($script:AllItems | Where-Object { -not $_.IsFolder })
     }
     
-    $isPreview = $chkPreviewMode.IsChecked
+    $isPreview = $true
     $toRename = @()
     
     # Pattern to match version numbers
@@ -4698,7 +4898,7 @@ function Clean-Names {
         $selected = @($script:AllItems | Where-Object { -not $_.IsFolder })
     }
     
-    $isPreview = $chkPreviewMode.IsChecked
+    $isPreview = $true
     $toRename = @()
     
     # Patterns to clean
@@ -4800,7 +5000,7 @@ function Find-Replace-Names {
         $selected = @($script:AllItems | Where-Object { -not $_.IsFolder -and $_.DisplayName.Contains($findText) })
     }
 
-    $isPreview = $chkPreviewMode.IsChecked
+    $isPreview = $true
     $toRename = @()
 
     foreach ($item in $selected) {
@@ -5037,14 +5237,8 @@ function Restore-Backup {
         return
     }
 
-    $result = [System.Windows.MessageBox]::Show(
-        "Restore from latest backup?`n`n$($backups[0].Name)`n`nThis will replace current Start Menu contents!",
-        "Confirm Restore", "YesNo", "Warning"
-    )
-
-    if ($result -ne 'Yes') { return }
-
     $latestBackup = $backups[0]
+    Update-Status "Restoring backup $($latestBackup.Name) with rollback protection..."
     $operationId = New-OperationId
     $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
     $rollbackRoot = Join-Path $Config.BackupRoot "_restore_rollback\$timestamp"
@@ -5124,6 +5318,7 @@ function Restore-Backup {
         }
         else {
             Write-Log "Restore complete." 'Success'
+            Update-Status "Backup $($latestBackup.Name) restored. Rollback snapshot kept."
             [System.Windows.MessageBox]::Show("Restore complete.`n`nRollback snapshot:`n$rollbackRoot", "Success", "OK", "Information")
         }
     }
@@ -5277,13 +5472,6 @@ function Import-Configuration {
 }
 
 function Reset-Configuration {
-    $result = [System.Windows.MessageBox]::Show(
-        "Reset all junk patterns and categories to defaults?",
-        "Confirm Reset", "YesNo", "Question"
-    )
-    
-    if ($result -ne 'Yes') { return }
-    
     # Reset junk patterns
     $script:JunkPatterns.Clear()
     @(
@@ -5314,6 +5502,7 @@ function Reset-Configuration {
     Refresh-CategoryPatternsUI
     Write-Log "Configuration reset to defaults" 'Success'
     Refresh-Items
+    Update-Status 'Configuration reset to defaults.'
 }
 
 function Refresh-JunkPatternsUI {
@@ -5629,35 +5818,6 @@ $ctxCatNetwork.Add_Click({ Move-ToCategory 'Networking' })
 # DataGrid selection changed
 $dgItems.Add_SelectionChanged({ Update-SelectionCount })
 
-# Keyboard shortcuts
-$Window.Add_KeyDown({
-    param($source, $e)
-    $null = $source
-
-    if ($e.Key -eq 'Delete') {
-        Delete-SelectedItems
-        $e.Handled = $true
-    }
-    elseif ($e.Key -eq 'A' -and $e.KeyboardDevice.Modifiers -eq 'Control') {
-        foreach ($item in $script:FilteredItems) { $item.IsSelected = $true }
-        $dgItems.Items.Refresh()
-        Update-SelectionCount
-        $e.Handled = $true
-    }
-    elseif ($e.Key -eq 'Z' -and $e.KeyboardDevice.Modifiers -eq 'Control') {
-        Invoke-Undo
-        $e.Handled = $true
-    }
-    elseif ($e.Key -eq 'F' -and $e.KeyboardDevice.Modifiers -eq 'Control') {
-        $txtSearch.Focus()
-        $e.Handled = $true
-    }
-    elseif ($e.Key -eq 'F5') {
-        Refresh-Items
-        $e.Handled = $true
-    }
-})
-
 # ============================================================================
 # INITIALIZATION
 # ============================================================================
@@ -5667,14 +5827,19 @@ Add-Type -AssemblyName Microsoft.VisualBasic
 
 Initialize-UiLocalizationAndAccessibility
 
-# Set admin status and elevation capability
-if ($script:IsAdmin) {
+# Set access status and elevation capability
+if ($Demo) {
+    $txtAdminStatus.Text = 'Demo workspace'
+    $txtAdminStatus.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#67E8F9')
+    $btnElevate.Visibility = 'Collapsed'
+}
+elseif ($script:IsAdmin) {
     $txtAdminStatus.Text = Get-UiString -Key 'Status.AdminFullAccess'
     $txtAdminStatus.Foreground = [System.Windows.Media.Brushes]::LightGreen
 }
 else {
-    $txtAdminStatus.Text = "$(Get-UiString -Key 'Status.StandardUser') (User scope writable, System/Profile read-only)"
-    $txtAdminStatus.Foreground = [System.Windows.Media.Brushes]::Orange
+    $txtAdminStatus.Text = Get-UiString -Key 'Status.StandardUser'
+    $txtAdminStatus.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#5EEAD4')
     $btnElevate.Visibility = 'Visible'
 }
 
@@ -5714,9 +5879,29 @@ try {
     Refresh-CategoryPatternsUI
 
     Refresh-Items
+    if ($Demo) {
+        $cmbScope.IsEnabled = $false
+        $btnBackup.IsEnabled = $false
+        $btnRestore.IsEnabled = $false
+        $btnOpenUserMenu.IsEnabled = $false
+        $btnOpenSystemMenu.IsEnabled = $false
+        $btnOpenBackups.IsEnabled = $false
+
+        switch ($DemoView) {
+            'Settings' { $tabSettings.IsSelected = $true }
+            'Log' { $tabLog.IsSelected = $true }
+            default { $tabActions.IsSelected = $true }
+        }
+    }
     Write-Log "Start Menu Organizer v$($Config.Version) initialized" 'Success'
-    Write-Log "File log: $script:LogFilePath" 'Info'
-    Write-Log "Keyboard shortcuts: Del=Delete, Ctrl+A=Select All, Ctrl+Z=Undo, Ctrl+F=Search, F5=Refresh" 'Info'
+    if ($Demo) {
+        Write-Log 'Review queue: 5 cleanup candidates' 'Warning'
+        Write-Log 'Risk review: 1 scripted launch' 'Warning'
+        Write-Log 'Demo operations are disabled.' 'Info'
+    }
+    else {
+        Write-Log "File log: $script:LogFilePath" 'Info'
+    }
 
     $Window.ShowDialog() | Out-Null
 }

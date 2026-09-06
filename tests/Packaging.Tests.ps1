@@ -10,13 +10,13 @@ $defaultOutputRoot = Join-Path $repoRoot 'dist'
 try {
     $result = & $buildScript -OutputRoot $outputRoot
 
-    if ($result.Version -ne '0.14.0') {
+    if ($result.Version -ne '0.15.0') {
         throw "Failed: package version was $($result.Version)."
     }
     if (-not (Test-Path -LiteralPath $result.Artifact)) {
         throw "Failed: package artifact was not created: $($result.Artifact)"
     }
-    if ((Split-Path $result.Artifact -Leaf) -ne 'StartMenuOrganizer-v0.14.0.zip') {
+    if ((Split-Path $result.Artifact -Leaf) -ne 'StartMenuOrganizer-v0.15.0.zip') {
         throw "Failed: artifact filename was incorrect: $($result.Artifact)"
     }
     if ((Split-Path (Split-Path $result.Artifact -Parent) -Leaf) -ne (Split-Path $outputRoot -Leaf)) {
@@ -37,7 +37,11 @@ try {
         'Install-StartMenuOrganizer.ps1',
         'Uninstall-StartMenuOrganizer.ps1',
         'README.md',
-        'LICENSE'
+        'LICENSE',
+        'assets/brand/start-menu-organizer.ico',
+        'assets/brand/start-menu-organizer-512.png',
+        'assets/screenshots/01-start-menu-workspace.png',
+        'assets/social-preview.png'
     )
     foreach ($entry in $expectedEntries) {
         if ($entries -notcontains $entry) {
@@ -48,14 +52,38 @@ try {
     $installScript = Get-Content -LiteralPath (Join-Path $result.PackageRoot 'Install-StartMenuOrganizer.ps1') -Raw
     if ($installScript -notmatch 'CreateShortcut' -or
         $installScript -notmatch 'ExecutionPolicy Bypass' -or
-        $installScript -notmatch 'Uninstall-StartMenuOrganizer\.ps1') {
-        throw 'Failed: installer did not contain shortcut, execution-policy, and uninstall wiring.'
+        $installScript -notmatch 'Uninstall-StartMenuOrganizer\.ps1' -or
+        $installScript -notmatch 'SkipShortcut' -or
+        $installScript -notmatch 'start-menu-organizer\.ico' -or
+        $installScript -notmatch '\.start-menu-organizer-install') {
+        throw 'Failed: installer did not contain shortcut, icon, marker, and uninstall wiring.'
     }
 
     $uninstallScript = Get-Content -LiteralPath (Join-Path $result.PackageRoot 'Uninstall-StartMenuOrganizer.ps1') -Raw
     if ($uninstallScript -notmatch 'Start Menu Organizer\.lnk' -or
-        $uninstallScript -notmatch 'Remove-Item') {
-        throw 'Failed: uninstaller did not remove the shortcut and install root.'
+        $uninstallScript -notmatch 'Remove-Item' -or
+        $uninstallScript -notmatch 'Refusing to remove an unrecognized install directory') {
+        throw 'Failed: uninstaller did not validate and remove the shortcut and install root.'
+    }
+
+    $metadataFiles = @(Get-ChildItem -LiteralPath $result.PackageMetadata -File)
+    if ($metadataFiles.Name -contains 'SysAdminDoc.StartMenuOrganizer.yaml') {
+        throw 'Failed: the build authored a prohibited winget manifest.'
+    }
+
+    $installRoot = Join-Path $outputRoot 'install-validation'
+    $installerPath = Join-Path $result.PackageRoot 'Install-StartMenuOrganizer.ps1'
+    & $installerPath -InstallRoot $installRoot -SkipShortcut
+    & $installerPath -InstallRoot $installRoot -SkipShortcut
+    if (-not (Test-Path -LiteralPath (Join-Path $installRoot 'assets\brand\start-menu-organizer.ico')) -or
+        -not (Test-Path -LiteralPath (Join-Path $installRoot '.start-menu-organizer-install')) -or
+        (Test-Path -LiteralPath (Join-Path $installRoot 'assets\assets'))) {
+        throw 'Failed: repeated isolated install did not preserve the expected branded layout.'
+    }
+
+    & (Join-Path $installRoot 'Uninstall-StartMenuOrganizer.ps1') -InstallRoot $installRoot
+    if (Test-Path -LiteralPath $installRoot) {
+        throw 'Failed: isolated uninstall did not remove the validated install directory.'
     }
 
     $defaultResult = & $buildScript

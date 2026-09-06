@@ -1,247 +1,144 @@
-# Start Menu Organizer
+<p align="center">
+  <img src="assets/brand/start-menu-organizer-512.png" width="144" alt="Start Menu Organizer logo">
+</p>
 
-A Windows Start Menu management tool. Clean up junk, detect broken shortcuts, remove duplicates, organize by category, and take full control of your Start Menu.
+<h1 align="center">Start Menu Organizer</h1>
 
-![Version](https://img.shields.io/badge/Version-v0.14.0-blue)
-![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-blue)
-![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6)
-![License](https://img.shields.io/badge/License-MIT-green)
+<p align="center">
+  Find broken shortcuts and clutter, review every proposed change, then put your Windows Start Menu back in order.
+</p>
 
-## Features
+<p align="center">
+  <img alt="Version" src="https://img.shields.io/badge/Version-v0.15.0-22D3EE?style=flat-square">
+  <img alt="License" src="https://img.shields.io/badge/License-MIT-5EEAD4?style=flat-square">
+  <img alt="Platform" src="https://img.shields.io/badge/Windows-10%20%7C%2011-38BDF8?style=flat-square">
+  <img alt="PowerShell" src="https://img.shields.io/badge/PowerShell-5.1%2B-7F8DA3?style=flat-square">
+</p>
 
-### Detection & Analysis
-- **Broken Shortcut Detection** - Identifies shortcuts pointing to files/folders that no longer exist
-- **Richer Shortcut Validation** - Classifies `.lnk`, `.url`, and `.appref-ms` entries, including file URL checks
-- **Full Shortcut Metadata** - Extracts target, arguments, working directory, description, hotkey, and icon for `.lnk` and `.url` files
-- **Risk Classification** - Flags suspicious shortcuts: script hosts, network targets, encoded commands, hidden execution, long arguments, script file targets
-- **Package Provenance** - Detects winget, Chocolatey, Scoop, MSIX, and traditional installer origins
-- **Duplicate Detection** - Finds multiple shortcuts targeting the same executable
-- **Junk Detection** - Flags uninstall links, readme files, help docs, license files, and other clutter
-- **Reparse Point Safety** - Blocks junction/symlink traversal during scans and mutations
-- **Target Path Display** - See exactly where each shortcut points
+![Start Menu Organizer reviewing a Windows Start Menu](assets/screenshots/01-start-menu-workspace.png)
 
-### Cleanup Actions
-| Action | Description |
-|--------|-------------|
-| Delete Selected | Remove checked items |
-| Remove All Junk | Delete all detected junk items in one click |
-| Remove Broken Shortcuts | Clean up shortcuts with invalid targets |
-| Remove Duplicates | Keep one copy, delete redundant shortcuts |
-| Flatten Single-Item Folders | Move lone shortcuts up and remove the folder |
-| Remove Empty Folders | Clean up orphaned directories |
-| Move All to Root | Flatten entire Start Menu by moving all shortcuts to root |
+Start Menu folders get noisy over time. Uninstall links remain behind, old shortcuts stop working, and the same app can appear in several places. Start Menu Organizer scans the actual shortcut folders and turns that mess into a list you can search, filter, and fix.
 
-### Organization
-- **11 Built-in Categories**: Development, Browsers, Communication, Media, Graphics, Office, Utilities, Gaming, System, Security, Networking
-- **Move to Category** - Manually organize selected items
-- **Auto-Organize All** - Automatically sort recognized apps into category folders based on pattern matching
+Every cleanup action creates a reviewable plan first. Nothing runs until you choose **Run reviewed plan**. Deletes, moves, renames, and restores also write recovery data so a mistake does not become a scavenger hunt.
 
-### Batch Rename
-- **Strip Version Numbers** - Remove "v1.2.3", "2024", "(1.0.0)" from names
-- **Clean Up Names** - Remove "x64", "64-bit", "Microsoft", extra spaces, "- Shortcut" suffix
-- **Find & Replace** - Custom text replacement in shortcut names
+## Why use it
 
-### User Interface
-- **DataGrid View** with sortable columns: Name, Type, Status, Location, Target
-- **Background Scanning** - Start Menu scans run in a cancelable worker so the window stays responsive
-- **Cancelable Bulk Execution** - Reviewed operation plans run incrementally with progress and Cancel support
-- **Search/Filter** (Ctrl+F) - Filter by name, path, or target in real-time
-- **Profile Targeting** - Scan a selected local/offline profile or the Windows Default user profile
-- **Filter Toggles** - Show/hide Shortcuts, Folders, Junk, Broken, Duplicates
-- **Sort Options** - Sort by Name, Type, Status, Location, or Target
-- **Preview Mode** - See what actions would do without executing them
-- **Progress Bar** - Visual feedback for long operations
-- **Activity Log** - Color-coded operation history
-- **Accessibility Metadata** - Named controls, help text, predictable tab order, and verified contrast for core dark-theme text
+| | What it does |
+|---|---|
+| **See the real problem** | Finds junk entries, broken targets, duplicates, protected folders, and shortcuts with risky launch behavior. |
+| **Review before changing files** | Converts bulk actions into an exact operation plan that can be inspected, exported, or cleared. |
+| **Organize in batches** | Moves apps into built-in categories, flattens small folders, cleans names, or keeps a simple root layout. |
+| **Recover with confidence** | Keeps an undo journal, timestamped backups, and rollback snapshots for restores. |
 
-### Safety Features
-- **Persistent Undo Support** (Ctrl+Z) - Recover reversible deletes, moves, renames, and restores from the saved operation journal
-- **Atomic File Writes** - Config and journal files use temp-file-then-rename with `.bak` recovery for crash safety
-- **Backup/Restore** - Create timestamped backups before making changes
-- **Fail-Closed Restore** - Validates backup contents in staging and preserves a pre-restore rollback snapshot before replacing live entries
-- **Editable Transaction Plans** - Preview bulk actions into JSON plans that can be reviewed, exported, imported, and executed exactly
-- **Protected Folders** - Preserves built-in folders like Startup, Windows Tools, and Administrative Tools by default
-- **Persistent Settings** - Automatically saves scope, patterns, categories, and protected-folder preferences
-- **Structured Logs** - Writes dated JSONL logs and crash reports under the local app data folder
-- **Preview Mode** - Dry-run any operation first
-- **Confirmation Dialogs** - No destructive action without explicit approval
+## Product tour
 
-### Export & Reporting
-- **Export Scan Report** - Export current scan results as CSV or JSON
-- **Enterprise Handoff** - Export cleaned shortcut inventory with deployment guidance for Intune/Start Layout
-- **Virtual Group Preview** - Preview category organization without moving files
-- **Rule Preset Import/Export** - Save and load junk/category/protected-folder configurations
+<table>
+  <tr>
+    <td width="50%"><img src="assets/screenshots/02-settings-and-rules.png" alt="Editable cleanup rules and category settings"></td>
+    <td width="50%"><img src="assets/screenshots/03-activity-log.png" alt="Start Menu Organizer activity log"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Rules that fit your machine</b><br>Adjust junk patterns and category matching without editing the script.</td>
+    <td align="center"><b>A record of what happened</b><br>Follow scans and operations in the app, with JSONL logs saved locally.</td>
+  </tr>
+</table>
 
-### Elevation
-- **Capability Status** - Shows which scopes are writable vs read-only in the current session
-- **Relaunch as Admin** - One-click UAC elevation for full system access
+## Install
 
-### Customization (Settings Tab)
-- Add/remove junk detection patterns
-- Edit category patterns for auto-organization
-- Export/Import configuration as JSON
-- Reset to defaults
-
-## Installation
-
-### Option 1: Installable Package
-1. Download `StartMenuOrganizer-v0.14.0.zip` from the release artifacts.
-2. Extract the zip to a local folder.
-3. Install for the current user:
+1. Download **StartMenuOrganizer-v0.15.0.zip** from the [latest release](https://github.com/SysAdminDoc/Start-Menu-Organizer/releases/latest).
+2. Extract the archive.
+3. Run the installer from that folder:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-StartMenuOrganizer.ps1
 ```
 
-The installer copies the app to `%LOCALAPPDATA%\Programs\Start Menu Organizer`, creates a Start Menu shortcut, and installs an uninstaller beside the app.
+The installer places the app under `%LOCALAPPDATA%\Programs\Start Menu Organizer` and adds a Start Menu shortcut. It does not need administrator access.
 
-Uninstall:
+To remove it later:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\Start Menu Organizer\Uninstall-StartMenuOrganizer.ps1"
 ```
 
-### Option 2: Direct Script
-1. Download `StartMenuOrganizerPro.ps1`
-2. Run it from PowerShell:
+### Run without installing
+
+Download the repository and launch the script directly:
 
 ```powershell
-.\StartMenuOrganizerPro.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\StartMenuOrganizerPro.ps1
 ```
 
-### Verifying the Download
-After downloading, verify the SHA256 hash against `SHA256SUMS.txt` inside the zip or the `.sha256` file:
+Windows 10 or Windows 11 with Windows PowerShell 5.1 is enough. There are no extra modules to install.
 
-```powershell
-(Get-FileHash .\StartMenuOrganizer-v0.14.0.zip -Algorithm SHA256).Hash
-```
+## A safe first cleanup
 
-### Running as Administrator
-The package installer is per-user and does not require elevation. For full access to both User and System Start Menus, launch Start Menu Organizer as Administrator:
+1. Choose **User Start Menu** if you only want to change your own shortcuts.
+2. Select **Backup**.
+3. Filter to **Junk**, **Broken**, or **Duplicates**.
+4. Select the entries you recognize and prepare a cleanup plan.
+5. Read the plan summary, then choose **Run reviewed plan**.
 
-1. Right-click PowerShell → "Run as Administrator"
-2. Navigate to script location and run it
+Use **Run as admin** only when you need the shared System Start Menu, another local profile, or the Default User profile. Readable locations can still be scanned with standard access, but protected changes stay blocked.
 
-## Requirements
+## What it detects
 
-- Windows 10 or Windows 11
-- PowerShell 5.1 or higher (included with Windows)
-- No additional modules or dependencies
+- Invalid `.lnk`, `.url`, and `.appref-ms` targets
+- Duplicate shortcuts that point to the same application
+- Common clutter such as release notes, support links, and uninstall entries
+- Script hosts, network targets, hidden launches, encoded commands, and unusually long arguments
+- Reparse points that should not be followed during a scan or file operation
+- Installation sources including Chocolatey, Scoop, MSIX, WinGet, and traditional installers
 
-## Usage
+The item table shows the target, location, status, and risk flags together. Search works across names, paths, and targets.
 
-### Quick Start
-1. Launch the script (as Admin for full access)
-2. The tool scans both User and System Start Menus by default
-3. Use the filter checkboxes to focus on problem items (Junk, Broken, Duplicates)
-4. Select items and apply actions, or use bulk operations
+## Cleanup and organization
 
-### Keyboard Shortcuts
+The Actions tab can prepare plans to remove flagged entries, keep one copy of each duplicate, flatten single-item folders, clear empty folders, or move shortcuts to the Start Menu root. Category tools recognize development apps, browsers, communication tools, media apps, graphics software, office tools, utilities, games, system tools, security products, and networking software.
 
-| Shortcut | Action |
-|----------|--------|
-| `Del` | Delete selected items |
-| `Ctrl+A` | Select all visible items |
-| `Ctrl+Z` | Undo last action |
-| `Ctrl+F` | Focus search box |
-| `F5` | Refresh item list |
+Batch rename can remove version numbers, clean common vendor and architecture text, or apply a custom find and replace rule.
 
-### Right-Click Context Menu
-- Delete / Rename
-- Open File Location
-- Open Target Location
-- Move to Category (submenu with all categories)
-- Select All / Select None
+## Backups, undo, and restore
 
-### Recommended Workflow
+The app does not permanently erase a selected shortcut during a normal cleanup. It moves recoverable items into an operation backup area and records the original path in the undo journal.
 
-1. **Create a Backup** - Click "Backup" before making changes
-2. **Enable Preview Mode** - Check "Preview Mode" to test operations safely
-3. **Remove Broken First** - Click "Remove Broken Shortcuts" to clean invalid links
-4. **Remove Junk** - Click "Remove All Junk" to clear clutter
-5. **Handle Duplicates** - Click "Remove Duplicates" to deduplicate
-6. **Flatten or Organize** - Choose your preferred structure:
-   - "Move All to Root" for a flat structure
-   - "Auto-Organize All" for category folders
-7. **Clean Names** - Use batch rename to polish shortcut names
+Restore is protected separately. A backup is copied into a staging area and checked before the live Start Menu is replaced. The current contents are saved as a rollback snapshot first. If restoration fails, the app attempts to put the previous contents back automatically.
 
-## Start Menu Locations
-
-The tool manages shortcuts in these directories:
-
-| Scope | Path |
-|-------|------|
-| User | `%APPDATA%\Microsoft\Windows\Start Menu\Programs` |
-| System | `%ProgramData%\Microsoft\Windows\Start Menu\Programs` |
-| Selected Profile | `<profile root>\AppData\Roaming\Microsoft\Windows\Start Menu\Programs` |
-| Default User | `%SystemDrive%\Users\Default\AppData\Roaming\Microsoft\Windows\Start Menu\Programs` |
-
-**Note**: System, Selected Profile, and Default User modifications require Administrator privileges. Standard users can scan readable profile targets, but destructive changes, restore, and backup operations for those scopes are blocked or skipped until the app is elevated.
-
-## Configuration
-
-### Junk Patterns
-Default patterns that flag items as junk:
-```
-*uninstall*, *readme*, *help*, *documentation*, *manual*,
-*license*, *website*, *support*, *visit *, *about *,
-*release notes*, *changelog*, *what's new*, *getting started*,
-*user guide*, *online *, *web link*, *url*, *register*,
-*feedback*, *update*, *check for update*
-```
-
-### Category Patterns
-Each category has wildcard patterns for auto-organization. Examples:
-
-- **Development**: `Visual Studio*`, `VS Code*`, `Git*`, `Python*`, `Docker*`
-- **Browsers**: `Google Chrome*`, `Firefox*`, `Edge*`, `Brave*`
-- **Gaming**: `Steam*`, `Epic Games*`, `GOG*`, `Xbox*`
-
-### Export/Import Config
-Save your customized patterns:
-1. Go to Settings tab
-2. Click "Export Config"
-3. Save the JSON file
-
-### Localization Overrides
-UI strings are centralized in the app and can be overridden without editing layout logic. Add JSON files under `%LOCALAPPDATA%\StartMenuOrganizerPro\Localization`:
-
-- `strings.<culture>.json`, such as `strings.en-US.json`
-- `strings.<language>.json`, such as `strings.en.json`
-- `strings.json` as the fallback override file
-
-Each file maps string keys to replacement text, for example:
-
-```json
-{
-  "btnBackup.Content": "Create Backup",
-  "txtSearch.AutomationName": "Search Start Menu entries"
-}
-```
-
-### Profile Targeting
-To work against another local or offline Windows profile:
-
-1. Open Settings.
-2. Set **Profile Target** to the profile root, such as `D:\MountedUsers\Alice` or `C:\Users\Alice`.
-3. Select **Selected Profile** in the Scope picker.
-4. Run Start Menu Organizer as Administrator before applying changes, backup, or restore for that profile.
-
-Use **Default User** in the Scope picker to prepare `%SystemDrive%\Users\Default`; it is also admin-gated and uses separate `DefaultUser` backup folders.
-
-## Data Storage
-
-| Item | Location |
-|------|----------|
+| Data | Location |
+|---|---|
 | Backups | `%LOCALAPPDATA%\StartMenuOrganizerPro\Backups` |
-| Restore rollback snapshots | `%LOCALAPPDATA%\StartMenuOrganizerPro\Backups\_restore_rollback` |
+| Restore snapshots | `%LOCALAPPDATA%\StartMenuOrganizerPro\Backups\_restore_rollback` |
 | Undo journal | `%LOCALAPPDATA%\StartMenuOrganizerPro\undo.json` |
-| Undo backups | `%LOCALAPPDATA%\StartMenuOrganizerPro\UndoBackups` |
-| Config | `%LOCALAPPDATA%\StartMenuOrganizerPro\config.json` |
+| Settings | `%LOCALAPPDATA%\StartMenuOrganizerPro\config.json` |
 | Logs and crash reports | `%LOCALAPPDATA%\StartMenuOrganizerPro\Logs` |
-| Localization overrides | `%LOCALAPPDATA%\StartMenuOrganizerPro\Localization` |
 
-## Development
+## Work with other profiles
+
+Open **Settings**, choose a profile root such as `C:\Users\Alice` or an offline profile on another drive, then select **Selected Profile** from the scope list. **Default User** targets `%SystemDrive%\Users\Default` for preparing new Windows accounts.
+
+Changes to either target require administrator access. Backups keep separate folders for each scope.
+
+## Try the interface with sample data
+
+Demo mode loads a realistic, read-only set of shortcuts. It does not scan or change this PC.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\StartMenuOrganizerPro.ps1 -Demo
+```
+
+Use `-DemoView Settings` or `-DemoView Log` to open another part of the tour.
+
+## Verify a release
+
+Each release includes a `.sha256` file for the zip and `SHA256SUMS.txt` inside it. Compare the published value with:
+
+```powershell
+certutil -hashfile .\StartMenuOrganizer-v0.15.0.zip SHA256
+```
+
+The release scripts are not Authenticode-signed unless the release notes say otherwise. Review the source before running it if your environment requires signed PowerShell code.
+
+## Build and test
 
 Run the full local gate:
 
@@ -249,120 +146,20 @@ Run the full local gate:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\Run-Tests.ps1
 ```
 
-Build the release package:
+Build the installable archive and package metadata:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Build-Release.ps1
 ```
 
-Run the local restore safety regression test:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\RestoreSafety.Tests.ps1
-```
-
-Run the persistent undo journal regression test:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\UndoJournal.Tests.ps1
-```
-
-Run the guarded file-operation regression test:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\GuardedFileOperation.Tests.ps1
-```
-
-Run the editable operation-plan regression test:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\OperationPlan.Tests.ps1
-```
-
-Run the async scan wiring regression test:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\AsyncScan.Tests.ps1
-```
-
-Run the shortcut validation regression test:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\ShortcutValidation.Tests.ps1
-```
-
-Run the settings persistence regression test:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\SettingsPersistence.Tests.ps1
-```
-
-Run the structured logging regression test:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\Logging.Tests.ps1
-```
-
-Run the accessibility and localization regression test:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\AccessibilityLocalization.Tests.ps1
-```
-
-Run the profile/default-user targeting regression test:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\ProfileTarget.Tests.ps1
-```
-
-Run the reparse-point safety guards regression test:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\SafetyGuards.Tests.ps1
-```
-
-Run the shortcut metadata and risk classification regression test:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\ShortcutMetadata.Tests.ps1
-```
-
-## Troubleshooting
-
-### "Access Denied" errors
-- Run the script as Administrator for System Start Menu access
-
-### Items not appearing
-- Click "Refresh" or press F5
-- Check filter toggles - some types may be hidden
-
-### Undo not working
-- Undo restores the latest reversible operation from the saved journal
-- For older changes, use "Restore" to recover from a backup
-
-### Script won't run
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-
-### Crash or failed operation diagnostics
-- Check `%LOCALAPPDATA%\StartMenuOrganizerPro\Logs` for dated `.jsonl` logs and `StartMenuOrganizer-Crash-*.log` files
-
-## Related Tools
-
-> **Start Menu Organizer** cleans up and reorganizes what's already in your Start Menu — removing junk, broken links, and duplicates, and sorting apps into folders.
-> If you want to *save, deploy, or restore* a Start Menu layout across machines or after Windows updates, see the companion tool:
-
-**[Start Menu Manager](https://github.com/SysAdminDoc/Start-Menu-Manager)** — Export/import Start Menu layouts and taskbar configurations, manage named profiles, and perform full backups. Use Start Menu Organizer to clean up first, then Start Menu Manager to preserve and deploy the result.
+The build produces Scoop and Chocolatey metadata beside the zip. It also signs the packaged scripts when a code-signing certificate is available in the current user certificate store.
 
 ## Contributing
 
-Contributions are welcome! Feel free to submit issues and pull requests.
+Bug reports and focused pull requests are welcome. Include the Windows version, selected scope, and the relevant log excerpt when reporting a failed scan or file operation.
 
 ## License
 
-MIT License — see the [LICENSE](LICENSE) file for details.
+Start Menu Organizer is available under the [MIT License](LICENSE).
 
----
-
-**Tip**: Always create a backup before bulk operations. While undo is available, backups provide the safest recovery option.
+For exporting and deploying a finished Start layout across several PCs, see [Start Menu Manager](https://github.com/SysAdminDoc/Start-Menu-Manager).
